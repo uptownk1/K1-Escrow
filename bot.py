@@ -1,12 +1,18 @@
 # bot.py
 import os
+import re
+import asyncio
 from uuid import uuid4
+from datetime import datetime, timedelta
+import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
+    filters,
 )
 
 # ---------------- CONFIG ----------------
@@ -44,22 +50,55 @@ def create_new_escrow(chat_id):
         "ticket": ticket,
         "buyer_confirmed": False,
         "seller_confirmed": False,
+        "dispute": False,
+        "auto_dispute_task": None,
     }
     escrows[chat_id] = escrow
     return escrow
 
 def create_escrow_buttons(escrow):
     buttons = []
-    if not escrow["buyer_id"]:
+    if escrow["buyer_id"] is None:
         buttons.append([InlineKeyboardButton("Join as Buyer", callback_data="join_buyer")])
-    if not escrow["seller_id"]:
+    if escrow["seller_id"] is None:
         buttons.append([InlineKeyboardButton("Join as Seller", callback_data="join_seller")])
     buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel_escrow")])
     return InlineKeyboardMarkup(buttons)
 
 def create_buttons(items):
-    """Generic button creator: items = list of tuples (text, callback_data)"""
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
+
+def parse_amount(amount_text):
+    # Remove currency symbols and commas
+    clean = re.sub(r"[£,]", "", amount_text)
+    try:
+        return float(clean)
+    except:
+        return None
+
+def get_crypto_price(crypto_symbol):
+    # Get live price in GBP
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={crypto_symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
+    try:
+        data = requests.get(url).json()
+        price = data[crypto_symbol.lower()][FIAT_CURRENCY]
+        return price
+    except:
+        return None
+
+async def auto_dispute_check(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    escrow = escrows.get(chat_id)
+    if escrow and escrow["seller_confirmed"] and not escrow["buyer_confirmed"]:
+        escrow["dispute"] = True
+        await context.bot.send_message(
+            chat_id,
+            f"⚠️ Buyer did not confirm receipt within 15 minutes. Dispute opened. Ticket: {escrow['ticket']}"
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} auto-dispute triggered in group {chat_id}."
+        )
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,18 +143,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # --- Join Buyer ---
-    if data == "join_buyer" and not escrow["buyer_id"]:
+    if data == "join_buyer" and escrow["buyer_id"] is None:
         escrow["buyer_id"] = user_id
-        await query.message.reply_text(f"You have joined as Buyer. Ticket: {escrow['ticket']}")
+        other_msg = ""
+        if escrow["seller_id"]:
+            seller_username = (await context.bot.get_chat_member(chat_id, escrow["seller_id"])).user.username
+            other_msg = f"@{seller_username} joined as Seller.\n"
+        await query.message.reply_text(
+            f"You have joined as Buyer.\n{other_msg}Please wait for the Seller to join escrow."
+        )
         await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Buyer @{username} joined group {chat_id}."
         )
 
     # --- Join Seller ---
-    if data == "join_seller" and not escrow["seller_id"]:
+    if data == "join_seller" and escrow["seller_id"] is None:
         escrow["seller_id"] = user_id
-        await query.message.reply_text(f"You have joined as Seller. Ticket: {escrow['ticket']}")
+        other_msg = ""
+        if escrow["buyer_id"]:
+            buyer_username = (await context.bot.get_chat_member(chat_id, escrow["buyer_id"])).user.username
+            other_msg = f"@{buyer_username} joined as Buyer.\n"
+        await query.message.reply_text(
+            f"You have joined as Seller.\n{other_msg}Please wait for the Buyer to join escrow."
+        )
         await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Seller @{username} joined group {chat_id}."
@@ -124,9 +175,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Both parties joined ---
     if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
         escrow["status"] = "crypto_selection"
+        buyer_username = (await context.bot.get_chat_member(chat_id, escrow["buyer_id"])).user.username
+        seller_username = (await context.bot.get_chat_member(chat_id, escrow["seller_id"])).user.username
         await context.bot.send_message(
             chat_id,
             f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n\n"
+            f"Buyer: @{buyer_username}\nSeller: @{seller_username}\n\n"
             "Buyer, please select a cryptocurrency:",
             reply_markup=create_buttons([
                 ("BTC","crypto_BTC"),
@@ -137,8 +191,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer ID {escrow['buyer_id']} "
-            f"and Seller ID {escrow['seller_id']}."
+            f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer @{buyer_username} and Seller @{seller_username}."
         )
 
 # ---------------- MAIN ----------------
