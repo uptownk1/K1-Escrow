@@ -222,7 +222,11 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Add handlers for commands and messages
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))
+
+    print("Bot is running...")
+    app.run_polling()
