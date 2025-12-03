@@ -137,11 +137,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Join Buyer ---
     if data == "join_buyer" and not escrow["buyer_id"]:
         escrow["buyer_id"] = user_id
-        await query.message.reply_text(f"You have joined as Buyer. Ticket: {escrow['ticket']}")
-        await query.message.reply_text(
-            f"{username} joined as Buyer. Please wait for the Seller to join."
-        )
-        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
+        await context.bot.send_message(chat_id, f"You have joined as Buyer. Ticket: {escrow['ticket']}")
+        await context.bot.send_message(chat_id, f"{username} joined as Buyer.")
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Buyer @{username} joined group {chat_id}."
         )
@@ -149,16 +146,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Join Seller ---
     if data == "join_seller" and not escrow["seller_id"]:
         escrow["seller_id"] = user_id
-        await query.message.reply_text(f"You have joined as Seller. Ticket: {escrow['ticket']}")
-        await query.message.reply_text(
-            f"{username} joined as Seller. Please wait for the Buyer to join."
-        )
-        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
+        await context.bot.send_message(chat_id, f"You have joined as Seller. Ticket: {escrow['ticket']}")
+        await context.bot.send_message(chat_id, f"{username} joined as Seller.")
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Seller @{username} joined group {chat_id}."
         )
 
-    # --- Both parties joined ---
+    # --- Check if both joined ---
     if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
         escrow["status"] = "crypto_selection"
         buyer_username = (await context.bot.get_chat_member(chat_id, escrow["buyer_id"])).user.username
