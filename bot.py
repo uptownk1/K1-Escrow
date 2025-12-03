@@ -1,4 +1,3 @@
-# bot.py
 import os
 from uuid import uuid4
 import requests
@@ -173,8 +172,9 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
     escrow = escrows.get(chat_id)
+    
     if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        return  # ignore messages if not buyer or wrong status
+        return  # Ignore messages if not the buyer or wrong status
 
     # Parse GBP amount
     amount_text = text.replace("£", "").replace(",", "")
@@ -199,16 +199,19 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
 
+    # Provide the wallet address for payment
     wallet_address = ESCROW_WALLETS[crypto_symbol]
     await update.message.reply_text(
-        f"Send {crypto_amount} {crypto_symbol} (~£{fiat_amount}) to the following wallet:\n\n{wallet_address}\n\n"
-        "Once sent, press 'I’ve Paid' below.",
+        f"Amount {fiat_amount} GBP (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
+        "Please send the crypto to the following wallet address:\n\n"
+        f"{wallet_address}\n\nOnce you have sent the payment, press 'I’ve Paid' below to confirm.",
         reply_markup=create_buttons([
             ("I’ve Paid", "buyer_paid"),
             ("Cancel", "cancel_escrow")
         ])
     )
 
+    # Log the transaction to the admin group
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
@@ -222,7 +225,4 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))
-
-    print("Bot is running...")
-    app.run_polling()
+    app.add
