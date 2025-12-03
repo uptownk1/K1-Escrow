@@ -172,7 +172,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
     escrow = escrows.get(chat_id)
-    
+
     if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
         return  # Ignore messages if not the buyer or wrong status
 
