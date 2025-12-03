@@ -158,8 +158,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["crypto"] = crypto
         escrow["status"] = "awaiting_amount"
         await query.message.reply_text(
-            f"Crypto selected: {crypto}. Please type the GBP amount you want to pay "
-            "(e.g., £1000, £1,000, £1,000.00, 1000.00)."
+            f"Crypto selected: {crypto}. Please use the /amount <amount> command to specify the GBP amount you want to pay."
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
@@ -173,21 +172,24 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     escrow = escrows.get(chat_id)
 
+    # Check if the user is the buyer and if the status is awaiting_amount
     if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        return  # Ignore messages if not the buyer or wrong status
+        return  # Ignore if the user is not the buyer or status is wrong
 
-    # Parse GBP amount
-    amount_text = text.replace("£", "").replace(",", "")
+    # Expecting format like "/amount 1000"
+    if not text.startswith("/amount"):
+        return  # Ignore if it's not the /amount command
+
+    amount_text = text.split()[1].strip()
     try:
-        fiat_amount = float(amount_text)
+        fiat_amount = float(amount_text.replace("£", "").replace(",", ""))
     except ValueError:
         await update.message.reply_text(
-            "Invalid amount format. Please enter a valid GBP amount "
-            "(e.g., £1000, £1,000, £1,000.00, 1000.00)."
+            "Invalid amount format. Please enter a valid GBP amount after the /amount command (e.g., /amount 1000)."
         )
         return
 
-    # Calculate crypto amount using CoinGecko
+    # Calculate the equivalent crypto amount
     crypto_symbol = escrow["crypto"]
     crypto_price = get_crypto_price(crypto_symbol)
     if crypto_price is None:
@@ -199,7 +201,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
 
-    # Provide the wallet address for payment
     wallet_address = ESCROW_WALLETS[crypto_symbol]
     await update.message.reply_text(
         f"Amount {fiat_amount} GBP (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
