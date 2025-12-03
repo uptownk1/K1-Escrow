@@ -69,7 +69,6 @@ def create_buttons(items):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
 
 def parse_amount(amount_text):
-    # Remove currency symbols and commas
     clean = re.sub(r"[£,]", "", amount_text)
     try:
         return float(clean)
@@ -77,7 +76,6 @@ def parse_amount(amount_text):
         return None
 
 def get_crypto_price(crypto_symbol):
-    # Get live price in GBP
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={crypto_symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
     try:
         data = requests.get(url).json()
@@ -194,6 +192,58 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer @{buyer_username} and Seller @{seller_username}."
         )
 
+    # --- Buyer selects crypto ---
+    if data.startswith("crypto_") and escrow["status"] == "crypto_selection":
+        crypto = data.split("_")[1]
+        escrow["crypto"] = crypto
+        escrow["status"] = "awaiting_amount"
+        await context.bot.send_message(
+            chat_id,
+            f"Buyer selected {crypto}. Please enter the amount in GBP or crypto (e.g. £100, 100, 0.005 {crypto}):"
+        )
+
+# ---------------- AMOUNT INPUT ----------------
+async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    escrow = escrows.get(chat_id)
+    if not escrow or escrow["status"] != "awaiting_amount":
+        return
+    if user_id != escrow["buyer_id"]:
+        return
+
+    amount_text = update.message.text
+    fiat_amount = parse_amount(amount_text)
+    if fiat_amount is None:
+        await update.message.reply_text("Invalid amount format. Please try again.")
+        return
+
+    crypto_price = get_crypto_price(escrow["crypto"])
+    if crypto_price is None:
+        await update.message.reply_text("Error fetching crypto price. Try again later.")
+        return
+
+    crypto_amount = round(fiat_amount / crypto_price, 8)
+    escrow["fiat_amount"] = fiat_amount
+    escrow["crypto_amount"] = crypto_amount
+    escrow["status"] = "awaiting_payment"
+
+    wallet_address = ESCROW_WALLETS[escrow["crypto"]]
+    await update.message.reply_text(
+        f"Please send {crypto_amount} {escrow['crypto']} (~£{fiat_amount}) to the following escrow wallet:\n\n{wallet_address}\n\n"
+        "Once you’ve sent the funds, press 'I’ve Paid' below.",
+        reply_markup=create_buttons([
+            ("I’ve Paid", "buyer_paid"),
+            ("Cancel", "cancel_escrow")
+        ])
+    )
+
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
+        f"Amount: £{fiat_amount} / {crypto_amount} {escrow['crypto']}, Crypto: {escrow['crypto']}"
+    )
+
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
@@ -201,6 +251,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))
 
     print("Bot is running...")
     app.run_polling()
