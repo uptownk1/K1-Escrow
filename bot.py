@@ -177,12 +177,12 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if the user is the buyer and if the status is awaiting_amount
     if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        print("Escrow status is not awaiting_amount or user is not the buyer.")
+        print(f"Escrow status: {escrow['status']}, Buyer ID: {escrow['buyer_id']}")
         return  # Ignore if the user is not the buyer or status is wrong
 
     # Expecting format like "/amount 1000"
     if not text.startswith("/amount"):
-        print("Message doesn't start with /amount command.")
+        print(f"Invalid command: {text}")
         return  # Ignore if it's not the /amount command
 
     amount_text = text.split()[1].strip()
