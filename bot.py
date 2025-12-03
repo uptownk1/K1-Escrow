@@ -55,10 +55,15 @@ def create_buttons(buttons):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=data)] for text, data in buttons])
 
 def generate_ticket():
-    from uuid import uuid4
     return str(uuid4())[:8]
 
 # ---------------- COMMANDS ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Thank you for using K1 Escrow Bot!\n\n"
+        "Add this bot into a group with the buyer and seller and type /escrow to start a trade."
+    )
+
 async def start_escrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = create_buttons([("Join as Buyer", "join_buyer"), ("Join as Seller", "join_seller")])
     await update.message.reply_text("Select your role to start escrow:", reply_markup=buttons)
@@ -138,6 +143,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- MAIN ----------------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", start_escrow))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
