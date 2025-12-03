@@ -1,22 +1,21 @@
 # bot.py
 import os
-import re
 from uuid import uuid4
+import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
-    filters,
     ContextTypes,
+    filters
 )
-import requests
 
 # ---------------- CONFIG ----------------
 TOKEN = os.environ.get("TOKEN")
 ADMIN_GROUP_ID = os.environ.get("ADMIN_GROUP_ID")
-if not ADMIN_GROUP_ID:
+if ADMIN_GROUP_ID is None:
     print("ADMIN_GROUP_ID not set! Exiting.")
     exit(1)
 ADMIN_GROUP_ID = int(ADMIN_GROUP_ID)
@@ -54,7 +53,6 @@ def create_new_escrow(chat_id):
 
 def create_escrow_buttons(escrow):
     buttons = []
-    # Buyer/Seller buttons always visible for other party
     if not escrow["buyer_id"]:
         buttons.append([InlineKeyboardButton("Join as Buyer", callback_data="join_buyer")])
     if not escrow["seller_id"]:
@@ -66,29 +64,12 @@ def create_buttons(items):
     """Generic button creator: items = list of tuples (text, callback_data)"""
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
 
-def parse_amount(amount_text):
-    """
-    Parses GBP amounts from input.
-    Acceptable formats:
-        1000, £1000, £1,000, £1,000.00, 1000.00
-    """
-    text = amount_text.strip()
-    text = text.replace("£", "").replace(",", "")
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
 def get_crypto_price(symbol):
-    """Fetch crypto price in GBP from Coingecko"""
     try:
-        mapping = {"BTC":"bitcoin","ETH":"ethereum","LTC":"litecoin","SOL":"solana"}
-        coin_id = mapping.get(symbol)
-        if not coin_id:
-            return None
-        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=gbp")
-        r.raise_for_status()
-        return float(r.json()[coin_id]["gbp"])
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
+        response = requests.get(url)
+        data = response.json()
+        return data[symbol.lower()][FIAT_CURRENCY]
     except:
         return None
 
@@ -137,8 +118,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Join Buyer ---
     if data == "join_buyer" and not escrow["buyer_id"]:
         escrow["buyer_id"] = user_id
-        await context.bot.send_message(chat_id, f"You have joined as Buyer. Ticket: {escrow['ticket']}")
-        await context.bot.send_message(chat_id, f"{username} joined as Buyer.")
+        await query.message.reply_text(f"You have joined as Buyer. Ticket: {escrow['ticket']}")
+        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Buyer @{username} joined group {chat_id}."
         )
@@ -146,21 +127,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Join Seller ---
     if data == "join_seller" and not escrow["seller_id"]:
         escrow["seller_id"] = user_id
-        await context.bot.send_message(chat_id, f"You have joined as Seller. Ticket: {escrow['ticket']}")
-        await context.bot.send_message(chat_id, f"{username} joined as Seller.")
+        await query.message.reply_text(f"You have joined as Seller. Ticket: {escrow['ticket']}")
+        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Seller @{username} joined group {chat_id}."
         )
 
-    # --- Check if both joined ---
+    # --- Both parties joined ---
     if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
         escrow["status"] = "crypto_selection"
-        buyer_username = (await context.bot.get_chat_member(chat_id, escrow["buyer_id"])).user.username
-        seller_username = (await context.bot.get_chat_member(chat_id, escrow["seller_id"])).user.username
         await context.bot.send_message(
             chat_id,
-            f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n"
-            f"Buyer: @{buyer_username}\nSeller: @{seller_username}\n\n"
+            f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n\n"
             "Buyer, please select a cryptocurrency:",
             reply_markup=create_buttons([
                 ("BTC","crypto_BTC"),
@@ -171,16 +149,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer @{buyer_username} "
-            f"and Seller @{seller_username}."
+            f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer ID {escrow['buyer_id']} "
+            f"and Seller ID {escrow['seller_id']}."
         )
 
     # --- Crypto selection ---
-    if data.startswith("crypto_") and escrow["status"]=="crypto_selection" and user_id==escrow["buyer_id"]:
+    if data.startswith("crypto_") and escrow["status"] == "crypto_selection" and user_id == escrow["buyer_id"]:
         crypto = data.split("_")[1]
         escrow["crypto"] = crypto
         escrow["status"] = "awaiting_amount"
-        await query.message.reply_text(f"Crypto selected: {crypto}. Please type the GBP amount you want to pay (e.g., £1000, £1,000, £1,000.00, 1000.00).")
+        await query.message.reply_text(
+            f"Crypto selected: {crypto}. Please type the GBP amount you want to pay "
+            "(e.g., £1000, £1,000, £1,000.00, 1000.00)."
+        )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Escrow {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
@@ -190,20 +171,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
+    text = update.message.text.strip()
     escrow = escrows.get(chat_id)
-    if not escrow or escrow["status"] != "awaiting_amount":
-        return
-    if user_id != escrow["buyer_id"]:
-        return
+    if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
+        return  # ignore messages if not buyer or wrong status
 
-    amount_text = update.message.text
-    fiat_amount = parse_amount(amount_text)
-    if fiat_amount is None:
+    # Parse GBP amount
+    amount_text = text.replace("£", "").replace(",", "")
+    try:
+        fiat_amount = float(amount_text)
+    except ValueError:
         await update.message.reply_text(
-            "Invalid amount format. Please enter a valid GBP amount (e.g., £1000, £1,000, £1,000.00, 1000.00)."
+            "Invalid amount format. Please enter a valid GBP amount "
+            "(e.g., £1000, £1,000, £1,000.00, 1000.00)."
         )
         return
 
+    # Calculate crypto amount using CoinGecko
     crypto_symbol = escrow["crypto"]
     crypto_price = get_crypto_price(crypto_symbol)
     if crypto_price is None:
