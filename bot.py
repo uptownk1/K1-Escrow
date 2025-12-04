@@ -115,7 +115,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = query.from_user.username or query.from_user.first_name
     data = query.data
 
-    # Log to check the callback data
     logging.info(f"Callback data received: {data} from user: {username} (ID: {user_id}) in chat: {chat_id}")
 
     # Retrieve the escrow for the current chat
@@ -179,20 +178,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["crypto"] = crypto  # Save the selected crypto
         escrow["status"] = "awaiting_amount"  # Update the status
 
-        # Log the selected cryptocurrency
         logging.info(f"Buyer: {username} selected {crypto}. Escrow Ticket: {escrow['ticket']}.")
 
         await query.message.reply_text(
-            f"Crypto selected: {crypto}. Please use the /amount feature to confirm the amount your sending in pounds. e.g /amount 500. Please do not put the £ symbol just type the number"
+            f"Crypto selected: {crypto}. Please use the /amount feature to confirm the amount you're sending in pounds. e.g /amount 500. Please do not put the £ symbol just type the number"
         )
 
-        # Update the admin group about the crypto selection
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Escrow Ticket: {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
         )
 
-        # Send the updated reply markup with the selected crypto
         await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
 
     # --- Buyer Paid ---
@@ -208,26 +204,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
-  # --- Admin Confirms Payment ---
-if data == "payment_received" or data == "payment_not_received":
+# --- Admin Confirms Payment ---
+async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    escrow = escrows.get(chat_id)
+    if not escrow:
+        logging.warning(f"No escrow found for chat_id {chat_id}.")
+        return
+
     payment_status = "received" if data == "payment_received" else "not received"
     escrow["status"] = "payment_confirmed"
     escrow["buyer_confirmed"] = data == "payment_received"
 
-    # Create the confirmation message
     message_text = (
         f"Admin has confirmed that the payment was {'received' if escrow['buyer_confirmed'] else 'not received'}. "
         f"{'You may continue with the transaction.' if escrow['buyer_confirmed'] else 'Please resolve the issue.'}"
     )
 
-    # Debug log to check the value of escrow["group_id"]
-    logging.info(f"Escrow group ID: {escrow['group_id']}")  # Log the group ID
-
-    # Send the confirmation back to the escrow group (where buyer and seller are)
     try:
-        # Ensure the correct group is being used (escrow['group_id'] should be the group with buyer and seller)
         await context.bot.send_message(
-            escrow["group_id"],  # Send to the same group where the escrow was initiated
+            escrow["group_id"],  # Send to the escrow group (buyer and seller)
             message_text
         )
         logging.info(f"Payment confirmation sent to group {escrow['group_id']}")
@@ -239,7 +236,6 @@ if data == "payment_received" or data == "payment_not_received":
         ADMIN_GROUP_ID,
         f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
     )
-
 
 # ---------------- MESSAGE HANDLERS ----------------
 
@@ -333,7 +329,7 @@ def main():
     application.add_handler(CommandHandler("escrow", escrow_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="buyer_paid"))
+    application.add_handler(CallbackQueryHandler(handle_admin_payment_confirmation, pattern="payment_received|payment_not_received"))
 
     application.run_polling()
 
