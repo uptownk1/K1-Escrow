@@ -2,6 +2,7 @@ import os
 import logging
 from uuid import uuid4
 import requests
+import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -68,9 +69,32 @@ def get_crypto_price(symbol):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
         response = requests.get(url)
+        
+        # Log response status code and body for better debugging
+        logging.info(f"API response status code: {response.status_code} for {symbol}")
+        logging.info(f"API response: {response.text}")
+
+        # Check if rate-limited
+        if response.status_code == 429:
+            retry_after = int(response.headers.get('Retry-After', 60))  # Get the "Retry-After" header if available
+            logging.warning(f"Rate limited. Retrying in {retry_after} seconds.")
+            time.sleep(retry_after)  # Wait before retrying
+            return get_crypto_price(symbol)  # Retry the request
+
+        # Check for successful response
+        if response.status_code != 200:
+            logging.error(f"Error fetching price for {symbol}: {response.status_code}")
+            return None
+        
         data = response.json()
-        return data[symbol.lower()][FIAT_CURRENCY]
-    except:
+        if symbol.lower() in data:
+            return data[symbol.lower()][FIAT_CURRENCY]
+        else:
+            logging.error(f"Response error: {data}")
+            return None
+            
+    except Exception as e:
+        logging.error(f"Exception fetching crypto price for {symbol}: {e}")
         return None
 
 # ---------------- COMMANDS ----------------
@@ -206,60 +230,46 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     logging.info(f"Fetching price for {crypto_symbol}.")
-    price = get_crypto_price(crypto_symbol)
-
-    # If price fetching fails
-    if not price:
-        logging.error(f"Failed to fetch crypto price for {crypto_symbol}.")
-        await update.message.reply_text("Error fetching crypto price. Please try again later.")
+    crypto_price = get_crypto_price(crypto_symbol)
+    if not crypto_price:
+        logging.error(f"Failed to fetch price for {crypto_symbol}.")
+        await update.message.reply_text(f"Sorry, there was an error fetching the price for {crypto_symbol}. Please try again later.")
         return
 
-    # Calculate the crypto amount
-    crypto_amount = round(fiat_amount / price, 8)
-    logging.info(f"Calculated crypto amount: {crypto_amount} {crypto_symbol}.")
-
-    # Update the escrow with the amount and status
+    # Calculate crypto amount based on fiat amount and crypto price
+    crypto_amount = fiat_amount / crypto_price
     escrow["fiat_amount"] = fiat_amount
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
-
-    # Get the wallet address for the selected cryptocurrency
-    wallet_address = ESCROW_WALLETS.get(crypto_symbol)
-    if not wallet_address:
-        logging.error(f"Wallet address not found for {crypto_symbol}.")
-        await update.message.reply_text(f"Sorry, we do not have a wallet address for {crypto_symbol}.")
-        return
-
-    # Send the response to the buyer
+    
     await update.message.reply_text(
-        f"Amount: £{fiat_amount} (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
-        f"Please send the crypto to the following wallet address:\n\n"
-        f"{wallet_address}\n\nOnce you have sent the payment, press 'I’ve Paid' below to confirm.",
-        reply_markup=create_buttons([
-            ("I’ve Paid", "buyer_paid"),
-            ("Cancel", "cancel_escrow")
-        ])
+        f"Amount to pay: {fiat_amount} {FIAT_CURRENCY} = {crypto_amount:.4f} {crypto_symbol.upper()}.\n"
+        f"Please send the payment to the wallet address below:\n\n"
+        f"{ESCROW_WALLETS[crypto_symbol.upper()]}\n\n"
+        "Once you have sent the payment, please confirm by clicking 'I've Paid'."
     )
 
-    # Log to the admin group about the escrow update
     await context.bot.send_message(
         ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
-        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}, Wallet: {wallet_address}"
+        f"Escrow {escrow['ticket']}: Buyer @{user_id} has set the amount {fiat_amount} {FIAT_CURRENCY} "
+        f"({crypto_amount:.4f} {crypto_symbol.upper()}) for crypto {crypto_symbol.upper()}."
     )
 
-# ---------------- MAIN ----------------
-
-def main():
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# ---------------- SETUP ----------------
+async def main():
     application = ApplicationBuilder().token(TOKEN).build()
 
+    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("escrow", escrow_command))
-    application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.Regex(r"^/amount \d+(\.\d+)?$"), handle_amount))
 
-    application.run_polling()
+    # Start the bot
+    logging.info("Starting bot...")
+    await application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)  # Set the logging level
+    import asyncio
+    asyncio.run(main())
