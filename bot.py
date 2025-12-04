@@ -319,14 +319,11 @@ async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TY
         ])
     )
 
-# Add the new message handler to the application
-app.add_handler(MessageHandler(filters.Text, handle_wallet_address))
-
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()  # Initialize app here
 
     # 🔥 ORDER MATTERS — ADMIN FIRST!!!
     app.add_handler(CallbackQueryHandler(
@@ -341,6 +338,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
+
+    # Add wallet address handler after the app object is created
+    app.add_handler(MessageHandler(filters.Text, handle_wallet_address))
 
     app.run_polling()
 
