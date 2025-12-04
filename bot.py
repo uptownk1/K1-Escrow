@@ -217,11 +217,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Buyer, please proceed accordingly."
         )
 
-        # Optionally, log this for reference
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"Admin confirmed that payment for Escrow {escrow['ticket']} was {payment_status}."
-        )
+        # If the payment was confirmed, send additional instructions to the seller
+        if payment_status == "received":
+            await context.bot.send_message(
+                escrow["group_id"],  # Send to the correct group
+                f"Buyer’s payment of £{fiat_amount} (~{escrow['crypto_amount']} {crypto_symbol}) "
+                f"has been received in escrow. Seller, please send the goods/services.",
+                reply_markup=create_buttons([("I’ve Sent the Goods/Services", "seller_sent")])
+            )
+        else:
+            await context.bot.send_message(
+                escrow["group_id"],  # Send to the correct group
+                "Payment has not yet been received in escrow. Buyer, please wait for the transaction "
+                "to confirm in your wallet and then click 'I’ve Paid' again to try once more.",
+                reply_markup=create_buttons([("I’ve Paid", "buyer_paid"), ("Cancel", "cancel_escrow")])
+            )
 
 # ---------------- MESSAGE HANDLERS ----------------
 
