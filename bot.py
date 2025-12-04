@@ -109,12 +109,16 @@ async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- CALLBACKS ----------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # Answer the callback query
     chat_id = query.message.chat_id
     user_id = query.from_user.id
     username = query.from_user.username or query.from_user.first_name
     data = query.data
 
+    # Log to check the callback data
+    logging.info(f"Callback data received: {data} from user: {username} (ID: {user_id}) in chat: {chat_id}")
+
+    # Retrieve the escrow for the current chat
     escrow = escrows.get(chat_id)
     if not escrow:
         escrow = create_new_escrow(chat_id)
@@ -157,10 +161,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n\n"
             "Buyer, please select a cryptocurrency:",
             reply_markup=create_buttons([
-                ("BTC","crypto_BTC"),
-                ("ETH","crypto_ETH"),
-                ("LTC","crypto_LTC"),
-                ("SOL","crypto_SOL")
+                ("BTC", "crypto_BTC"),
+                ("ETH", "crypto_ETH"),
+                ("LTC", "crypto_LTC"),
+                ("SOL", "crypto_SOL")
             ])
         )
         await context.bot.send_message(
@@ -171,16 +175,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Crypto selection ---
     if data.startswith("crypto_") and escrow["status"] == "crypto_selection" and user_id == escrow["buyer_id"]:
-        crypto = data.split("_")[1]
-        escrow["crypto"] = crypto
-        escrow["status"] = "awaiting_amount"
+        crypto = data.split("_")[1]  # Extract the selected cryptocurrency
+        escrow["crypto"] = crypto  # Save the selected crypto
+        escrow["status"] = "awaiting_amount"  # Update the status
+
+        # Log the selected cryptocurrency
+        logging.info(f"Buyer {username} selected {crypto} for Escrow {escrow['ticket']}.")
+
         await query.message.reply_text(
             f"Crypto selected: {crypto}. Please use the /amount <amount> command to specify the GBP amount you want to pay."
         )
+
+        # Update the admin group about the crypto selection
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Escrow {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
         )
+
+        # Send the updated reply markup with the selected crypto
+        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
 
     # --- Buyer Paid ---
     if data == "buyer_paid" and escrow["status"] == "awaiting_payment" and user_id == escrow["buyer_id"]:
@@ -190,12 +203,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']} in group {chat_id}. "
+            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']}. "
             "Please confirm if the payment was received.",
-            reply_markup=create_buttons([
-                (f"Yes ({escrow['ticket']})", f"payment_received_{chat_id}"),
-                (f"No ({escrow['ticket']})", f"payment_not_received_{chat_id}")
-            ])
+            reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
@@ -289,7 +299,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("escrow", escrow_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
-    application.add_handler(CallbackQueryHandler(button_callback))  # This catches all button presses
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern="buyer_paid"))
 
     application.run_polling()
 
