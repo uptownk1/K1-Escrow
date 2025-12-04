@@ -69,14 +69,9 @@ def get_crypto_price(symbol):
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
         response = requests.get(url)
         data = response.json()
-        logging.info(f"CoinGecko response for {symbol}: {data}")  # Log the raw response
-        if symbol.lower() in data:
-            return data[symbol.lower()][FIAT_CURRENCY]
-        else:
-            logging.error(f"Invalid symbol {symbol} or missing data for {symbol}")
-            return None
+        return data[symbol.lower()][FIAT_CURRENCY]
     except Exception as e:
-        logging.error(f"Error fetching crypto price: {e}")  # Log the error
+        logging.error(f"Error fetching crypto price for {symbol}: {e}")
         return None
 
 # ---------------- COMMANDS ----------------
@@ -193,7 +188,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if we are in the correct state
     if escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer.")
+        logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer. Status: {escrow['status']} Buyer ID: {escrow['buyer_id']}")
         return
 
     if not text.startswith("/amount"):
@@ -203,6 +198,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount_text = text.split()[1].strip()
     try:
         fiat_amount = float(amount_text.replace("£", "").replace(",", ""))
+        logging.info(f"Parsed amount: {fiat_amount} GBP")
     except ValueError:
         await update.message.reply_text(
             "Invalid amount format. Please enter a valid GBP amount after the /amount command (e.g., /amount 1000)."
@@ -214,10 +210,12 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     crypto_price = get_crypto_price(crypto_symbol)
     if crypto_price is None:
         await update.message.reply_text("Error fetching crypto price. Please try again later.")
+        logging.error(f"Failed to fetch crypto price for {crypto_symbol}.")
         return
 
     # Calculate the cryptocurrency amount
     crypto_amount = round(fiat_amount / crypto_price, 8)
+    logging.info(f"Calculated crypto amount: {crypto_amount} {crypto_symbol}")
 
     # Save the values in the escrow dictionary
     escrow["fiat_amount"] = fiat_amount
@@ -228,6 +226,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet_address = ESCROW_WALLETS.get(crypto_symbol)
     if not wallet_address:
         await update.message.reply_text(f"Wallet address for {crypto_symbol} is missing. Please contact support.")
+        logging.error(f"No wallet address found for {crypto_symbol}.")
         return
 
     # Send the response to the buyer
@@ -246,19 +245,22 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ---------------- MAIN ----------------
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+def main():
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Command Handlers
+    # Commands
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("escrow", escrow_command))
-    
-    # Callback Query Handlers
+
+    # Callback Handlers
     application.add_handler(CallbackQueryHandler(button_callback))
 
     # Message Handlers
-    application.add_handler(MessageHandler(filters.TEXT, handle_all_messages))
-    application.add_handler(MessageHandler(filters.Regex(r"^/amount"), handle_amount))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
+    application.add_handler(MessageHandler(filters.TEXT, handle_amount))
 
+    # Run the bot
     application.run_polling()
+
+if __name__ == "__main__":
+    main()
