@@ -199,36 +199,54 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- ADMIN RESPONSE HANDLER ----------------
 async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # Acknowledge the callback query
     user_id = query.from_user.id
-    data = query.data
-
+    data = query.data  # This will be 'payment_received' or 'payment_not_received'
+    
+    # Ensure that only the admin can handle this
     if user_id != ADMIN_GROUP_ID:
         await query.message.reply_text("You are not authorized to perform this action.")
         return
 
+    # Get the corresponding escrow object for this group (escrow is stored by group chat ID)
     chat_id = query.message.chat_id
     escrow = escrows.get(chat_id)
 
+    # If no active escrow exists, notify the admin
     if not escrow:
         await query.message.reply_text("No active escrow found for this group.")
         return
 
+    # Ensure the escrow is in a state where admin confirmation is required
+    if escrow["status"] != "awaiting_admin_confirmation":
+        await query.message.reply_text("Escrow is not in a state awaiting admin confirmation.")
+        return
+
     # Admin confirms payment was received
     if data == "payment_received":
-        escrow["status"] = "completed"
+        escrow["status"] = "completed"  # Mark escrow as completed
         await query.message.reply_text("Payment confirmed. Escrow is now complete.")
+
+        # Notify the admin and update the participants (buyer, seller)
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Payment confirmed for Escrow {escrow['ticket']}. Transaction is now complete."
         )
-        await context.bot.send_message(escrow["buyer_id"], "Payment confirmed. You can proceed with the trade.")
-        await context.bot.send_message(escrow["seller_id"], "Payment confirmed. You can proceed with the trade.")
+        await context.bot.send_message(escrow["buyer_id"], "Payment confirmed. You can now proceed with the trade.")
+        await context.bot.send_message(escrow["seller_id"], "Payment confirmed. You can now proceed with the trade.")
 
-    # Admin denies payment
-    if data == "payment_not_received":
-        escrow["status"] = "failed"
+        # Notify the relevant group that the transaction is complete
+        await context.bot.send_message(escrow["group_id"], "Escrow completed successfully. Payment received.")
+
+        # Optionally, trigger next steps in escrow group (if required)
+        # If you need to continue the flow, you can add more logic here, such as sending additional instructions.
+
+    # Admin denies payment (payment not received)
+    elif data == "payment_not_received":
+        escrow["status"] = "failed"  # Mark escrow as failed
         await query.message.reply_text("Payment not received. Escrow has been failed.")
+
+        # Notify the admin and update the participants (buyer, seller)
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Escrow {escrow['ticket']} failed. Payment was not received."
@@ -236,6 +254,8 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
         await context.bot.send_message(escrow["buyer_id"], "Payment not confirmed. Escrow has been failed.")
         await context.bot.send_message(escrow["seller_id"], "Payment not confirmed. Escrow has been failed.")
 
+        # Notify the relevant group that the transaction has failed
+        await context.bot.send_message(escrow["group_id"], "Escrow failed. Payment not received.")
 
 # ---------------- MESSAGE HANDLERS ----------------
 
