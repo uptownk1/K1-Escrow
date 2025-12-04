@@ -168,27 +168,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- MESSAGE HANDLERS ----------------
 
-# Handle all messages and log them
+# General message handler to capture all messages (with logging)
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received message: {update.message.text} from user: {update.message.from_user.id} in chat: {update.message.chat_id}")
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
+
+    logging.info(f"Received message: {text} from user: {user_id} in chat: {chat_id}")
 
     # Check if it's from a group chat
     if update.message.chat.type in ['group', 'supergroup']:
         logging.info(f"Received message from group: {update.message.chat.title}")
 
-    # Ensure we're handling only the 'awaiting_amount' state for the buyer
+    # Check if buyer is in 'awaiting_amount' state and in correct group
     escrow = escrows.get(update.message.chat_id)
     if escrow and escrow['status'] == 'awaiting_amount' and update.message.from_user.id == escrow['buyer_id']:
         logging.info(f"Buyer entered amount: {update.message.text}")
-        # Proceed with processing the amount if valid (this logic is in handle_amount)
+        # Now we will handle the amount logic
+        await handle_amount(update, context)
 
-# Handle /amount messages
+
+# Handle the /amount command message
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    logging.info(f"Received message for amount: {text} from user: {user_id} in chat: {chat_id}")
+    logging.info(f"Handling amount: {text} from user: {user_id} in chat: {chat_id}")
 
     # Ensure that escrow exists
     escrow = escrows.get(chat_id)
@@ -196,7 +202,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.warning("No escrow found for this chat.")
         return
     
-    # Check if we are in the correct state
+    # Ensure we're in the correct state
     if escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
         logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer.")
         return
@@ -226,35 +232,33 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrow["status"] = "awaiting_payment"
 
     wallet_address = ESCROW_WALLETS[crypto_symbol]
+    escrow["wallet_address"] = wallet_address
+
     await update.message.reply_text(
-        f"Amount {fiat_amount} GBP (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
-        "Please send the crypto to the following wallet address:\n\n"
-        f"{wallet_address}\n\nOnce you have sent the payment, press 'I’ve Paid' below to confirm.",
-        reply_markup=create_buttons([
-            ("I’ve Paid", "buyer_paid"),
-            ("Cancel", "cancel_escrow")
-        ])
+        f"Amount confirmed: £{fiat_amount:.2f}\n"
+        f"Your wallet address for {crypto_symbol} ({crypto_amount} {crypto_symbol}): {wallet_address}\n\n"
+        "Please send the specified amount to the wallet address."
     )
 
-    # Log the transaction to the admin group
     await context.bot.send_message(
         ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
-        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}"
+        f"Escrow {escrow['ticket']} amount confirmed: £{fiat_amount} for crypto {crypto_symbol}. "
+        f"Buyer: {user_id} ({update.message.from_user.username or update.message.from_user.first_name}) "
+        f"has provided amount {fiat_amount}."
     )
 
+
 # ---------------- MAIN ----------------
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    
-    app = ApplicationBuilder().token(TOKEN).build()
+if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        level=logging.INFO)
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    # Add handlers for commands and messages
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("escrow", escrow_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))  # Handle /amount
+    # Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("escrow", escrow_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.TEXT, handle_all_messages))
 
-    logging.info("Bot is running...")  # Ensure this prints
-    app.run_polling()
+    # Run the bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
