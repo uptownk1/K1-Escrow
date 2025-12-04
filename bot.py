@@ -195,6 +195,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
+    # --- Admin Confirms Payment ---
+    if data == "payment_received" and user_id == ADMIN_GROUP_ID:
+        escrow["status"] = "completed"
+        await query.message.reply_text("Payment confirmed. Escrow is now complete.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Payment confirmed for Escrow {escrow['ticket']}. Transaction is now complete."
+        )
+        await context.bot.send_message(escrow["buyer_id"], "Payment confirmed. You can proceed with the trade.")
+        await context.bot.send_message(escrow["seller_id"], "Payment confirmed. You can proceed with the trade.")
+
+    # --- Admin Denies Payment ---
+    if data == "payment_not_received" and user_id == ADMIN_GROUP_ID:
+        escrow["status"] = "failed"
+        await query.message.reply_text("Payment not received. Escrow has been failed.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} failed. Payment was not received."
+        )
+        await context.bot.send_message(escrow["buyer_id"], "Payment not confirmed. Escrow has been failed.")
+        await context.bot.send_message(escrow["seller_id"], "Payment not confirmed. Escrow has been failed.")
+        
 # ---------------- MESSAGE HANDLERS ----------------
 
 # Handle /amount command
