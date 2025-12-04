@@ -195,8 +195,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
-    # --- Admin Confirms Payment ---
-    if data == "payment_received" and user_id == ADMIN_GROUP_ID:
+
+# ---------------- ADMIN RESPONSE HANDLER ----------------
+async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    if user_id != ADMIN_GROUP_ID:
+        await query.message.reply_text("You are not authorized to perform this action.")
+        return
+
+    chat_id = query.message.chat_id
+    escrow = escrows.get(chat_id)
+
+    if not escrow:
+        await query.message.reply_text("No active escrow found for this group.")
+        return
+
+    # Admin confirms payment was received
+    if data == "payment_received":
         escrow["status"] = "completed"
         await query.message.reply_text("Payment confirmed. Escrow is now complete.")
         await context.bot.send_message(
@@ -206,8 +225,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(escrow["buyer_id"], "Payment confirmed. You can proceed with the trade.")
         await context.bot.send_message(escrow["seller_id"], "Payment confirmed. You can proceed with the trade.")
 
-    # --- Admin Denies Payment ---
-    if data == "payment_not_received" and user_id == ADMIN_GROUP_ID:
+    # Admin denies payment
+    if data == "payment_not_received":
         escrow["status"] = "failed"
         await query.message.reply_text("Payment not received. Escrow has been failed.")
         await context.bot.send_message(
@@ -216,7 +235,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(escrow["buyer_id"], "Payment not confirmed. Escrow has been failed.")
         await context.bot.send_message(escrow["seller_id"], "Payment not confirmed. Escrow has been failed.")
-        
+
+
 # ---------------- MESSAGE HANDLERS ----------------
 
 # Handle /amount command
@@ -309,7 +329,8 @@ def main():
     application.add_handler(CommandHandler("escrow", escrow_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="buyer_paid"))
+    application.add_handler(CallbackQueryHandler(admin_response_handler, pattern="payment_received"))
+    application.add_handler(CallbackQueryHandler(admin_response_handler, pattern="payment_not_received"))
 
     application.run_polling()
 
