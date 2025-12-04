@@ -318,6 +318,7 @@ async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TY
             ("Funds Sent", f"funds_sent_{escrow['ticket']}")
         ])
     )
+    
 
 # ---------------- MAIN ----------------
 def main():
@@ -337,7 +338,6 @@ def main():
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
-    app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
 
     # Add wallet address handler after the app object is created
     app.add_handler(MessageHandler(filters.Text, handle_wallet_address))
