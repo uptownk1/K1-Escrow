@@ -283,14 +283,11 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
     
-    # Log to the admin group about the escrow update
+  # Log to the admin group about the escrow update
     await context.bot.send_message(
         ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
-        f"Transaction Details
-        GBP Amount: {fiat_amount} /
-        Crypto Amount: {crypto_amount} {crypto_symbol}, 
-        Sent To Wallet: {wallet_address}"
+        f"Escrow Ticket: {escrow['ticket']} Status: awaiting payment Buyer @{update.message.from_user.username}, "
+        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}, Depositing To Wallet: {wallet_address}"
     )
 
 # ---------------- MAIN ----------------
