@@ -172,8 +172,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             # Notify trade group (buyer and seller) that payment is not confirmed
             await context.bot.send_message(
                 escrow["group_id"],
-                "Payment Status: Not Received. Funds have not been received in escrow yet. "
-                "Please wait for confirmation or check again.",
+                "Status: Funds Not Received.\nThe bot will update shortly when payment has been received into escrow.",
                 reply_markup=create_buttons([
                     ("Cancel Escrow", "cancel_escrow")
                 ])
