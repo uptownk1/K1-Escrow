@@ -36,7 +36,7 @@ escrows = {}  # key: chat_id -> escrow dict
 def create_new_escrow(chat_id):
     ticket = str(uuid4())[:8].upper()
     escrow = {
-        "group_id": chat_id,
+        "group_id": chat_id,  # Store the group_id where the escrow is created
         "buyer_id": None,
         "seller_id": None,
         "status": None,
@@ -209,26 +209,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Admin Response to Payment Confirmation ---
     if data == "payment_received" or data == "payment_not_received":
         payment_status = "received" if data == "payment_received" else "not received"
-        
-        # Update escrow with admin confirmation
-        escrow["status"] = f"payment_{payment_status}"
-        
-        # Notify the group based on admin response
-        if payment_status == "received":
-            confirmation_message = f"Yes, Buyer has paid for Escrow {escrow['ticket']}."
-        else:
-            confirmation_message = f"No, the transaction has not been received yet for Escrow {escrow['ticket']}."
-        
-        # **FIX**: Send the confirmation message to the relevant group chat
+
+        # Send the response back to the escrow group
         await context.bot.send_message(
-            escrow["group_id"],  # This sends to the specific escrow group
-            confirmation_message
+            escrow["group_id"],  # Send to the correct group
+            f"Admin has confirmed that the payment for Escrow {escrow['ticket']} was {payment_status}. "
+            f"Buyer, please proceed accordingly."
         )
 
-        # Also notify the admin group about the admin response
+        # Optionally, log this for reference
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Admin has marked escrow {escrow['ticket']} as {payment_status}."
+            f"Admin confirmed that payment for Escrow {escrow['ticket']} was {payment_status}."
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
@@ -304,13 +296,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ("I’ve Paid", "buyer_paid"),
             ("Cancel", "cancel_escrow")
         ])
-    )
-    
-    # Log to the admin group about the escrow update
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
-        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}, Wallet: {wallet_address}"
     )
 
 # ---------------- MAIN ----------------
