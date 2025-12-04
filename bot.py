@@ -130,17 +130,15 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             logging.warning("Invalid admin callback format")
             return
 
-        # Determine whether the payment was received or not
-        payment_ok = status_word == "received"
-
         # Find the escrow by ticket
         escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
         if not escrow:
             logging.warning(f"No escrow found for ticket {ticket}")
             return
 
-        if payment_ok:
-            # If payment is confirmed
+        # Determine whether the payment was received or not
+        if status_word == "received":
+            payment_ok = True
             escrow["status"] = "payment_confirmed"
             escrow["buyer_confirmed"] = payment_ok
 
@@ -159,10 +157,11 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
                     ("I've sent the goods/services", "seller_sent_goods")
                 ])
             )
-        else:
-            # If payment is not received
+
+        elif status_word == "not_received":
+            payment_ok = False
             escrow["status"] = "payment_not_received"
-            escrow["buyer_confirmed"] = False
+            escrow["buyer_confirmed"] = payment_ok
 
             # Notify admin group
             await context.bot.send_message(
@@ -173,7 +172,8 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             # Notify trade group (buyer and seller) that payment is not confirmed
             await context.bot.send_message(
                 escrow["group_id"],
-                "Funds not yet received in escrow, this chat will update when payment has been confirmed.",
+                "Payment Status: Not Received. Funds have not been received in escrow yet. "
+                "Please wait for confirmation or check again.",
                 reply_markup=create_buttons([
                     ("Cancel Escrow", "cancel_escrow")
                 ])
