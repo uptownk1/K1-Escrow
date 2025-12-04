@@ -264,11 +264,45 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["goods_received"] = True
         escrow["status"] = "awaiting_seller_wallet"
 
-        await query.message.reply_text("Buyer has confirmed the receipt of goods/services. "
-                                      "Please provide your wallet address to receive payment.")
+        await query.message.reply_text("Buyer has confirmed receipt of goods/services. "
+                                      "Seller, please provide the wallet address for the release of funds.")
+
+        # Notify admin to prepare for transfer
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Buyer confirmed receipt of goods for Escrow {escrow['ticket']}. Waiting for Seller's wallet address."
+        )
+
+    # Seller submits wallet address
+    if data == "seller_wallet" and user_id == escrow["seller_id"]:
+        escrow["wallet_address"] = query.message.text  # Seller pastes wallet address
+        escrow["status"] = "awaiting_admin_confirmation"
+
+        await query.message.reply_text("Please wait while the funds are transferred to your wallet...")
+
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']}: Seller's wallet address received: {escrow['wallet_address']}. "
+            "Admin, please confirm funds are sent.",
+            reply_markup=create_buttons([
+                ("Funds Sent", f"funds_sent_{escrow['ticket']}")
+            ])
+        )
+
+    # Admin confirms funds sent
+    if data == "funds_sent" and user_id == ADMIN_GROUP_ID:
+        escrow["status"] = "complete"
+
+        await query.message.reply_text("Funds have been transferred to the seller's wallet. "
+                                      "The escrow is now complete. Thank you for using K1 Escrow.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} is now complete. Funds have been released to the seller."
+        )
+
         await context.bot.send_message(
             escrow["group_id"],
-            "Seller, please provide your wallet address for the funds to be released.",
+            "The escrow process is now complete. Both parties are happy. Thank you for using K1 Escrow."
         )
 
     # Dispute the trade
@@ -283,7 +317,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ---------------- MESSAGE HANDLER ----------------
-async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
@@ -293,38 +327,46 @@ async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("No active escrow. Use /escrow.")
         return
 
-    # Ensure only the seller can provide the wallet address
-    if escrow["seller_id"] != user_id:
-        await update.message.reply_text("You are not authorized to provide the wallet address.")
+    if escrow["buyer_id"] != user_id or escrow["status"] != "awaiting_amount":
+        await update.message.reply_text("You cannot set the amount now.")
         return
 
-    # If the escrow is in the 'awaiting_seller_wallet' status, it's the right time to provide the wallet address
-    if escrow["status"] != "awaiting_seller_wallet":
-        await update.message.reply_text("You're not in the correct stage to provide a wallet address.")
+    try:
+        amount = float(text.split()[1])
+    except (ValueError, IndexError):
+        await update.message.reply_text("Invalid amount. Example: /amount 50")
         return
 
-    # Save the wallet address
-    escrow["wallet_address"] = text
-    escrow["status"] = "awaiting_admin_confirmation"  # Waiting for admin confirmation
+    crypto = escrow["crypto"]
+    price = get_crypto_price(crypto)
+    if price is None:
+        await update.message.reply_text("Unable to fetch the price for the selected cryptocurrency. Try again later.")
+        return
 
-    # Notify seller and admin
-    await update.message.reply_text("Please wait while we process your wallet address. The funds will be transferred soon.")
+    # Calculate crypto amount and round to 8 decimal places
+    crypto_amount = round(amount / price, 8)
 
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']}: Seller's wallet address received: {escrow['wallet_address']}. "
-        "Admin, please confirm funds are sent.",
+    escrow["fiat_amount"] = amount
+    escrow["crypto_amount"] = crypto_amount
+    escrow["status"] = "awaiting_payment"
+
+    wallet = ESCROW_WALLETS.get(crypto)
+
+    await update.message.reply_text(
+        f"£{amount} = approx {crypto_amount} {crypto}\n"
+        f"Send to:\n{wallet}\n\n"
+        "Press 'I've Paid' once complete.",
         reply_markup=create_buttons([
-            ("Funds Sent", f"funds_sent_{escrow['ticket']}")
+            ("I've Paid", "buyer_paid"),
+            ("Cancel", "cancel_escrow")
         ])
     )
-    
 
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    app = ApplicationBuilder().token(TOKEN).build()  # Initialize app here
+    app = ApplicationBuilder().token(TOKEN).build()
 
     # 🔥 ORDER MATTERS — ADMIN FIRST!!!
     app.add_handler(CallbackQueryHandler(
@@ -338,9 +380,7 @@ def main():
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
-
-    # Add wallet address handler after the app object is created
-    app.add_handler(MessageHandler(filters.Text, handle_wallet_address))
+    app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
 
     app.run_polling()
 
