@@ -208,35 +208,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
-    escrow = escrows.get(query.message.chat_id)
+    escrow = escrows.get(query.message.chat_id)  # This gets the escrow for the admin group's chat_id.
+    
+    # Check if escrow exists
     if not escrow:
         logging.warning(f"No escrow found for chat_id {query.message.chat_id}.")
         return
 
+    # Define the payment status
     payment_status = "received" if data == "payment_received" else "not received"
     escrow["status"] = "payment_confirmed"
-    escrow["buyer_confirmed"] = data == "payment_received"
+    escrow["buyer_confirmed"] = data == "payment_received"  # Buyer confirmed flag
 
+    # Create the response message for the buyer and seller
     message_text = (
         f"Admin has confirmed that the payment was {'received' if escrow['buyer_confirmed'] else 'not received'}. "
         f"{'You may continue with the transaction.' if escrow['buyer_confirmed'] else 'Please resolve the issue.'}"
     )
 
     try:
-        # Send the confirmation to the escrow group (buyer and seller)
+        # Step 1: Send the confirmation to the **admin group** (for admin record-keeping)
         await context.bot.send_message(
-            escrow["chat_id"],  # Send to the escrow group (buyer and seller)
+            ADMIN_GROUP_ID,
+            f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
+        )
+        
+        # Step 2: Send the decision to the **escrow group** (where the buyer and seller are)
+        await context.bot.send_message(
+            escrow["group_id"],  # Send to the escrow group (buyer and seller)
             message_text
         )
-        logging.info(f"Payment confirmation sent to group {escrow['group_id']}")
-    except Exception as e:
-        logging.error(f"Error sending payment confirmation to escrow group: {e}")
 
-    # Optionally, log it in the admin group (if needed for admin's own logging)
-    await context.bot.send_message(
-        chat_id,
-        f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
-    )
+        logging.info(f"Payment confirmation sent to group {escrow['group_id']} and logged in the admin group.")
+    except Exception as e:
+        logging.error(f"Error sending payment confirmation: {e}")
 
 # ---------------- MESSAGE HANDLERS ----------------
 
