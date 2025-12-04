@@ -237,8 +237,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-# ---------------- MESSAGE HANDLER ----------------
-async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Seller sent goods/services
+    if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
+        escrow["goods_sent"] = True
+        await context.bot.send_message(
+            chat_id,
+            "Buyer please confirm that you've received the goods/services and you're happy for payment to be released. If you're not happy, dispute this trade below.",
+            reply_markup=create_buttons([("I've received the goods/services", "buyer_received_goods")])
+        )
+
+# ---------------- HANDLE WALLET ADDRESS ----------------
+async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
@@ -248,39 +257,23 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No active escrow. Use /escrow.")
         return
 
-    if escrow["buyer_id"] != user_id or escrow["status"] != "awaiting_amount":
-        await update.message.reply_text("You cannot set the amount now.")
+    if escrow["seller_id"] != user_id or not escrow["goods_sent"]:
+        await update.message.reply_text("You cannot provide the wallet address yet.")
         return
 
-    try:
-        amount = float(text.split()[1])
-    except (ValueError, IndexError):
-        await update.message.reply_text("Invalid amount. Example: /amount 50")
-        return
-
-    crypto = escrow["crypto"]
-    price = get_crypto_price(crypto)
-    if price is None:
-        await update.message.reply_text("Unable to fetch the price for the selected cryptocurrency. Try again later.")
-        return
-
-    # Calculate crypto amount and round to 8 decimal places
-    crypto_amount = round(amount / price, 8)
-
-    escrow["fiat_amount"] = amount
-    escrow["crypto_amount"] = crypto_amount
-    escrow["status"] = "awaiting_payment"
-
-    wallet = ESCROW_WALLETS.get(crypto)
+    # Validate wallet address format (you can use a more specific format check if necessary)
+    escrow["wallet_address"] = text
+    escrow["status"] = "awaiting_payment_release"
 
     await update.message.reply_text(
-        f"£{amount} = approx {crypto_amount} {crypto}\n"
-        f"Send to:\n{wallet}\n\n"
-        "Press 'I've Paid' once complete.",
-        reply_markup=create_buttons([
-            ("I've Paid", "buyer_paid"),
-            ("Cancel", "cancel_escrow")
-        ])
+        "We are now releasing the payment to the seller's wallet. Please wait, you will receive confirmation once payment's been sent."
+    )
+
+    # Send wallet details to admin group for review
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"Escrow {escrow['ticket']} - {escrow['crypto_amount']} {escrow['crypto']} will be released to the following address:\n{escrow['wallet_address']}",
+        reply_markup=create_buttons([("Payment Released", f"payment_released_{escrow['ticket']}")])
     )
 
 # ---------------- MAIN ----------------
