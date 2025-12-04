@@ -166,6 +166,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"Received message: {update.message.text}")
+
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -236,7 +239,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages to debug
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))  # Handle /amount
 
     print("Bot is running...")  # Ensure this prints
     app.run_polling()
