@@ -294,38 +294,6 @@ async def buyer_paid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
     )
 
-# ---------------- ADMIN PAYMENT HANDLER ----------------
-
-async def handle_admin_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    chat_id = query.message.chat_id
-    data = query.data
-
-    escrow = escrows.get(chat_id)
-    if not escrow:
-        await query.message.reply_text("Escrow not found.")
-        return
-
-    if data == "payment_received":
-        escrow["status"] = "completed"
-        await query.message.reply_text("Payment confirmed. The escrow is now complete.")
-        # Optionally notify buyer and seller
-        await context.bot.send_message(chat_id, "Payment has been confirmed. The escrow is complete.")
-        await context.bot.send_message(
-            ADMIN_GROUP_ID, f"Escrow {escrow['ticket']} completed in group {chat_id}."
-        )
-
-    elif data == "payment_not_received":
-        escrow["status"] = "failed"
-        await query.message.reply_text("Payment not received. The escrow has failed.")
-        # Optionally notify buyer and seller
-        await context.bot.send_message(chat_id, "Payment was not received. The escrow has failed.")
-        await context.bot.send_message(
-            ADMIN_GROUP_ID, f"Escrow {escrow['ticket']} failed in group {chat_id}."
-        )
-
 # ---------------- MAIN ----------------
 
 def main():
@@ -337,7 +305,6 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(CallbackQueryHandler(buyer_paid_handler, pattern="buyer_paid"))
-    application.add_handler(CallbackQueryHandler(handle_admin_payment, pattern="^(payment_received|payment_not_received)$"))
 
     application.run_polling()
 
