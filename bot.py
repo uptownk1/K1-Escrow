@@ -168,9 +168,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- MESSAGE HANDLERS ----------------
 
-# Debugging: log all messages
+# Debugging: Handle all messages and log them
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Log every incoming message to the console
     logging.info(f"Received message: {update.message.text}")
 
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,17 +179,21 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logging.info(f"Received message: {text} from user: {user_id}")
 
+    # Ensure that escrow exists
     escrow = escrows.get(chat_id)
-
-    if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        logging.warning("Either wrong status or not the buyer.")
-        return  # Ignore if the user is not the buyer or status is wrong
+    if not escrow:
+        logging.warning("No escrow found for this chat.")
+        return
+    
+    # Check if we are in the correct state
+    if escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
+        logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer.")
+        return
 
     if not text.startswith("/amount"):
         logging.warning(f"Message does not start with '/amount': {text}")
         return
 
-    # Expecting format like "/amount 1000"
     amount_text = text.split()[1].strip()
     try:
         fiat_amount = float(amount_text.replace("£", "").replace(",", ""))
