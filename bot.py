@@ -65,12 +65,28 @@ def create_buttons(items):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
 
 def get_crypto_price(symbol):
+    # Mapping user-friendly symbol to CoinGecko ID
+    symbol_mapping = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "LTC": "litecoin",
+        "SOL": "solana"
+    }
+
+    # Convert symbol to lowercase and map to CoinGecko ID
+    coingecko_symbol = symbol_mapping.get(symbol.upper())
+    if not coingecko_symbol:
+        logging.error(f"Unsupported cryptocurrency symbol: {symbol}")
+        return None
+
     try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol.lower()}&vs_currencies={FIAT_CURRENCY}"
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_symbol}&vs_currencies={FIAT_CURRENCY}"
         response = requests.get(url)
+        response.raise_for_status()  # Raise an error if the response code is not 2xx
         data = response.json()
-        return data[symbol.lower()][FIAT_CURRENCY]
-    except:
+        return data[coingecko_symbol][FIAT_CURRENCY]
+    except Exception as e:
+        logging.error(f"Error fetching crypto price for {symbol}: {e}")
         return None
 
 # ---------------- COMMANDS ----------------
