@@ -1,4 +1,5 @@
 import os
+import logging
 from uuid import uuid4
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -166,31 +167,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
+
+# Debugging: log all messages
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"Received message: {update.message.text}")
+    # Log every incoming message to the console
+    logging.info(f"Received message: {update.message.text}")
 
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    # Debugging: print the received message
-    print(f"Received message: {text} from {user_id}")
+    logging.info(f"Received message: {text} from user: {user_id}")
 
     escrow = escrows.get(chat_id)
 
-    # Check if the user is the buyer and if the status is awaiting_amount
     if not escrow or escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        print(f"Escrow status is not 'awaiting_amount' or the user is not the buyer.")
+        logging.warning("Either wrong status or not the buyer.")
         return  # Ignore if the user is not the buyer or status is wrong
 
-    # Handle /amount command
     if not text.startswith("/amount"):
-        print("Message does not start with '/amount'.")
-        return  # Ignore if it's not the /amount command
+        logging.warning(f"Message does not start with '/amount': {text}")
+        return
 
-    print("Processing /amount command...")
-    
     # Expecting format like "/amount 1000"
     amount_text = text.split()[1].strip()
     try:
@@ -201,7 +200,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Process the amount and calculate crypto equivalent
     crypto_symbol = escrow["crypto"]
     crypto_price = get_crypto_price(crypto_symbol)
     if crypto_price is None:
@@ -233,6 +231,8 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Add handlers for commands and messages
@@ -242,5 +242,5 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages to debug
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))  # Handle /amount
 
-    print("Bot is running...")  # Ensure this prints
+    logging.info("Bot is running...")  # Ensure this prints
     app.run_polling()
