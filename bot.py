@@ -262,13 +262,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Buyer confirms receipt of goods
     if data == "buyer_received_goods" and user_id == escrow["buyer_id"]:
         escrow["goods_received"] = True
+        escrow["status"] = "awaiting_seller_wallet"
+
+        await query.message.reply_text("Buyer has confirmed receipt of goods/services. "
+                                      "Seller, please provide the wallet address for the release of funds.")
+
+        # Notify admin to prepare for transfer
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Buyer confirmed receipt of goods for Escrow {escrow['ticket']}. Waiting for Seller's wallet address."
+        )
+
+    # Seller submits wallet address
+    if data == "seller_wallet" and user_id == escrow["seller_id"]:
+        escrow["wallet_address"] = query.message.text  # Seller pastes wallet address
+        escrow["status"] = "awaiting_admin_confirmation"
+
+        await query.message.reply_text("Please wait while the funds are transferred to your wallet...")
+
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']}: Seller's wallet address received: {escrow['wallet_address']}. "
+            "Admin, please confirm funds are sent.",
+            reply_markup=create_buttons([
+                ("Funds Sent", f"funds_sent_{escrow['ticket']}")
+            ])
+        )
+
+    # Admin confirms funds sent
+    if data == "funds_sent" and user_id == ADMIN_GROUP_ID:
         escrow["status"] = "complete"
 
-        await query.message.reply_text("Buyer has confirmed the receipt of goods/services. "
+        await query.message.reply_text("Funds have been transferred to the seller's wallet. "
                                       "The escrow is now complete. Thank you for using K1 Escrow.")
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Escrow {escrow['ticket']} is now complete. Buyer has confirmed receipt of the goods/services."
+            f"Escrow {escrow['ticket']} is now complete. Funds have been released to the seller."
+        )
+
+        await context.bot.send_message(
+            escrow["group_id"],
+            "The escrow process is now complete. Both parties are happy. Thank you for using K1 Escrow."
         )
 
     # Dispute the trade
