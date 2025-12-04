@@ -208,6 +208,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
+    # --- Admin confirmation for payment ---
+    if data == "payment_received" or data == "payment_not_received":
+        # Admin response (Yes or No)
+        payment_received = data == "payment_received"
+        escrow["status"] = "payment_confirmed" if payment_received else "payment_denied"
+
+        # Respond back to the escrow group
+        confirmation_message = (
+            f"Admin has {'confirmed' if payment_received else 'denied'} the payment for Escrow {escrow['ticket']}.\n"
+            f"{'Payment is confirmed, proceed with the trade.' if payment_received else 'Payment has not been confirmed, please resolve the issue.'}"
+        )
+        
+        # Send confirmation to relevant escrow group
+        await context.bot.send_message(
+            chat_id,
+            confirmation_message
+        )
+
+        # Log to admin group
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Admin confirmed payment for Escrow {escrow['ticket']}: {'Received' if payment_received else 'Not received'}."
+        )
+
 # ---------------- MESSAGE HANDLERS ----------------
 
 # Handle /amount command
