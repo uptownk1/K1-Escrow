@@ -73,6 +73,17 @@ def get_crypto_price(symbol):
     except:
         return None
 
+def parse_gbp_amount(text):
+    """Parse GBP amount from text like £1,000.00, 1000, 1,000 etc."""
+    sanitized = text.replace("£", "").replace(",", "").strip()
+    try:
+        amount = float(sanitized)
+        if amount <= 0:
+            return None
+        return amount
+    except ValueError:
+        return None
+
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -159,7 +170,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["crypto"] = crypto
         escrow["status"] = "awaiting_amount"
         await query.message.reply_text(
-            f"Crypto selected: {crypto}. Please use the /amount <amount> command to specify the GBP amount you want to pay."
+            f"Crypto selected: {crypto}. Buyer, please type the amount in GBP (e.g., £1,000 or 1000):"
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
@@ -167,56 +178,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
-
 # Debugging: Handle all messages and log them
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"Received message: {update.message.text}")
 
-async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Handle buyer GBP input
+async def handle_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    logging.info(f"Received message: {text} from user: {user_id}")
-
-    # Ensure that escrow exists
     escrow = escrows.get(chat_id)
     if not escrow:
-        logging.warning("No escrow found for this chat.")
-        return
-    
-    # Check if we are in the correct state
+        return  # No escrow for this chat
+
+    # Only respond if we're awaiting the buyer's amount
     if escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer.")
         return
 
-    if not text.startswith("/amount"):
-        logging.warning(f"Message does not start with '/amount': {text}")
-        return
-
-    amount_text = text.split()[1].strip()
-    try:
-        fiat_amount = float(amount_text.replace("£", "").replace(",", ""))
-    except ValueError:
+    amount = parse_gbp_amount(text)
+    if amount is None:
         await update.message.reply_text(
-            "Invalid amount format. Please enter a valid GBP amount after the /amount command (e.g., /amount 1000)."
+            "Invalid amount format. Please enter a valid GBP amount (e.g., £1,000 or 1000)."
         )
         return
 
+    # Fetch crypto price
     crypto_symbol = escrow["crypto"]
     crypto_price = get_crypto_price(crypto_symbol)
     if crypto_price is None:
         await update.message.reply_text("Error fetching crypto price. Try again later.")
         return
 
-    crypto_amount = round(fiat_amount / crypto_price, 8)
-    escrow["fiat_amount"] = fiat_amount
+    crypto_amount = round(amount / crypto_price, 8)
+    escrow["fiat_amount"] = amount
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
 
     wallet_address = ESCROW_WALLETS[crypto_symbol]
+
     await update.message.reply_text(
-        f"Amount {fiat_amount} GBP (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
+        f"Amount {amount} GBP (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
         "Please send the crypto to the following wallet address:\n\n"
         f"{wallet_address}\n\nOnce you have sent the payment, press 'I’ve Paid' below to confirm.",
         reply_markup=create_buttons([
@@ -225,11 +227,10 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-    # Log the transaction to the admin group
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
-        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}"
+        f"Amount: £{amount} / {crypto_amount} {crypto_symbol}"
     )
 
 # ---------------- MAIN ----------------
@@ -242,8 +243,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages to debug
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))  # Handle /amount
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Debugging
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount_input))  # Buyer input
 
-    logging.info("Bot is running...")  # Ensure this prints
+    logging.info("Bot is running...")
     app.run_polling()
