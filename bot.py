@@ -76,9 +76,18 @@ def get_crypto_price(symbol):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_symbol}&vs_currencies={FIAT_CURRENCY}"
         response = requests.get(url)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
         data = response.json()
-        return data[coingecko_symbol][FIAT_CURRENCY]
-    except:
+        price = data.get(coingecko_symbol, {}).get(FIAT_CURRENCY)
+        if price is None:
+            logging.error(f"Price for {symbol} not found in the response.")
+            return None
+        return price
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching crypto price for {symbol}: {e}")
+        return None
+    except ValueError:
+        logging.error(f"Error parsing response for {symbol}")
         return None
 
 # ---------------- COMMANDS ----------------
@@ -245,12 +254,17 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         amount = float(text.split()[1])
-    except:
+    except (ValueError, IndexError):
         await update.message.reply_text("Invalid amount. Example: /amount 50")
         return
 
     crypto = escrow["crypto"]
     price = get_crypto_price(crypto)
+    if price is None:
+        await update.message.reply_text("Unable to fetch the price for the selected cryptocurrency. Try again later.")
+        return
+
+    # Calculate crypto amount and round to 8 decimal places
     crypto_amount = round(amount / price, 8)
 
     escrow["fiat_amount"] = amount
