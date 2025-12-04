@@ -36,7 +36,7 @@ escrows = {}  # key: chat_id -> escrow dict
 def create_new_escrow(chat_id):
     ticket = str(uuid4())[:8].upper()
     escrow = {
-        "group_id": chat_id,  # Store the group_id where the escrow is created
+        "group_id": chat_id,
         "buyer_id": None,
         "seller_id": None,
         "status": None,
@@ -184,54 +184,98 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Buyer Paid ---
     if data == "buyer_paid" and escrow["status"] == "awaiting_payment" and user_id == escrow["buyer_id"]:
-        # Mark escrow as awaiting admin confirmation
         escrow["status"] = "awaiting_admin_confirmation"
-        
-        # Get the crypto and fiat details for the message
-        crypto_symbol = escrow["crypto"]
-        fiat_amount = escrow["fiat_amount"]
-        username = query.from_user.username
-
-        # Send message to admin asking for payment confirmation
+        await query.message.reply_text(
+            "Buyer marked as paid, please wait for the admin to confirm payment."
+        )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Buyer @{username} has marked escrow {escrow['ticket']} as paid. "
-            f"Details: {fiat_amount} GBP (~{escrow['crypto_amount']} {crypto_symbol})\n\n"
-            "Have you received the payment?",
+            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']}. "
+            "Please confirm if the payment was received.",
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
-        # Notify the buyer that their payment status is awaiting admin confirmation
-        await query.message.reply_text(
-            "You have marked as paid. Please wait for admin to confirm the payment."
-        )
+# ---------------- MESSAGE HANDLERS ----------------
 
-    # --- Admin Response to Payment Confirmation ---
-    if data == "payment_received" or data == "payment_not_received":
-        payment_status = "received" if data == "payment_received" else "not received"
+# Handle /amount command
+async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
 
-        # Send the response back to the correct escrow group
-        await context.bot.send_message(
-            escrow["group_id"],  # Send to the correct group
-            f"Admin has confirmed that the payment for Escrow {escrow['ticket']} was {payment_status}. "
-            f"Buyer, please proceed accordingly."
-        )
+    logging.info(f"Received message: {text} from user: {user_id}")
 
-        # If the payment was confirmed, send additional instructions to the seller
-        if payment_status == "received":
-            await context.bot.send_message(
-                escrow["group_id"],  # Send to the correct group
-                f"Buyer’s payment of £{fiat_amount} (~{escrow['crypto_amount']} {crypto_symbol}) "
-                f"has been received in escrow. Seller, please send the goods/services.",
-                reply_markup=create_buttons([("I’ve Sent the Goods/Services", "seller_sent")])
-            )
-        else:
-            await context.bot.send_message(
-                escrow["group_id"],  # Send to the correct group
-                "Payment has not yet been received in escrow. Buyer, please wait for the transaction "
-                "to confirm in your wallet and then click 'I’ve Paid' again to try once more.",
-                reply_markup=create_buttons([("I’ve Paid", "buyer_paid"), ("Cancel", "cancel_escrow")])
-            )
+    # Ensure that escrow exists
+    escrow = escrows.get(chat_id)
+    if not escrow:
+        logging.warning(f"No escrow found for chat_id {chat_id}.")
+        await update.message.reply_text("No active escrow found. Please use /escrow to start a new trade.")
+        return
+
+    # Ensure the status is "awaiting_amount" and that the buyer is sending the amount
+    if escrow["status"] != "awaiting_amount" or escrow["buyer_id"] != user_id:
+        logging.warning(f"Escrow {escrow['ticket']} not in awaiting_amount state or user {user_id} is not the buyer.")
+        await update.message.reply_text("Please make sure you are the buyer and in the correct state.")
+        return
+
+    try:
+        # Extract the fiat amount (assuming input format is `/amount <amount>`)
+        fiat_amount = float(text.split()[1])
+        logging.info(f"Amount extracted: {fiat_amount} GBP.")
+    except (IndexError, ValueError):
+        logging.warning(f"Invalid amount input from {user_id}: {text}")
+        await update.message.reply_text("Please enter a valid amount after the /amount command (e.g., /amount 50).")
+        return
+
+    # Fetch the price for the selected cryptocurrency
+    crypto_symbol = escrow.get("crypto")
+    if not crypto_symbol:
+        logging.error(f"Crypto symbol not set for escrow {escrow['ticket']}.")
+        await update.message.reply_text("No cryptocurrency selected. Please select one first.")
+        return
+
+    logging.info(f"Fetching price for {crypto_symbol}.")
+    price = get_crypto_price(crypto_symbol)
+
+    # If price fetching fails
+    if not price:
+        logging.error(f"Failed to fetch crypto price for {crypto_symbol}.")
+        await update.message.reply_text("Error fetching crypto price. Please try again later.")
+        return
+
+    # Calculate the crypto amount
+    crypto_amount = round(fiat_amount / price, 8)
+    logging.info(f"Calculated crypto amount: {crypto_amount} {crypto_symbol}.")
+
+    # Update the escrow with the amount and status
+    escrow["fiat_amount"] = fiat_amount
+    escrow["crypto_amount"] = crypto_amount
+    escrow["status"] = "awaiting_payment"
+
+    # Get the wallet address for the selected cryptocurrency
+    wallet_address = ESCROW_WALLETS.get(crypto_symbol)
+    if not wallet_address:
+        logging.error(f"Wallet address not found for {crypto_symbol}.")
+        await update.message.reply_text(f"Sorry, we do not have a wallet address for {crypto_symbol}.")
+        return
+
+    # Send the response to the buyer
+    await update.message.reply_text(
+        f"Amount: £{fiat_amount} (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
+        f"Please send the crypto to the following wallet address:\n\n"
+        f"{wallet_address}\n\nOnce you have sent the payment, press 'I’ve Paid' below to confirm.",
+        reply_markup=create_buttons([
+            ("I’ve Paid", "buyer_paid"),
+            ("Cancel", "cancel_escrow")
+        ])
+    )
+    
+    # Log to the admin group about the escrow update
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
+        f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}, Wallet: {wallet_address}"
+    )
 
 # ---------------- MAIN ----------------
 
