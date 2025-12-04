@@ -247,9 +247,6 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
         # Notify the relevant group that the transaction is complete
         await context.bot.send_message(escrow["group_id"], "Escrow completed successfully. Payment received.")
 
-        # Optional: Trigger next steps in escrow group (if required)
-        # Example: Finalize trade, release funds, etc.
-
     # Admin denies payment (payment not received)
     elif data == "payment_not_received":
         escrow["status"] = "failed"  # Mark escrow as failed
@@ -268,6 +265,7 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         # Notify the relevant group that the transaction has failed
         await context.bot.send_message(escrow["group_id"], "Escrow failed. Payment not received.")
+
 
 # ---------------- MESSAGE HANDLERS ----------------
 
