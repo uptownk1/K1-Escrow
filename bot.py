@@ -195,25 +195,56 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
-    # --- Admin Confirmation (Payment Received / Not Received) ---
+    # --- Admin confirms Payment Received (Yes) ---
     if data == "payment_received" and escrow["status"] == "awaiting_admin_confirmation":
-        escrow["status"] = "completed"
-        await query.message.reply_text(
-            "Payment has been confirmed. The escrow is now completed."
+        escrow["status"] = "awaiting_goods"
+        await context.bot.send_message(
+            chat_id,
+            "The payment has been received in escrow. Seller, you can now provide the goods/services and press 'I've Sent the Goods/Services'.",
+            reply_markup=create_buttons([("I've Sent the Goods/Services", "seller_sent_goods")])
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Escrow {escrow['ticket']} has been completed. Payment confirmed."
+            f"Admin confirmed payment for Escrow {escrow['ticket']}. Buyer @{username} paid."
         )
 
+    # --- Admin confirms Payment Not Received (No) ---
     if data == "payment_not_received" and escrow["status"] == "awaiting_admin_confirmation":
-        escrow["status"] = "failed"
-        await query.message.reply_text(
-            "Payment has not been received. The escrow has been marked as failed."
+        escrow["status"] = "awaiting_payment"
+        await context.bot.send_message(
+            chat_id,
+            "Transaction has not yet been received in escrow. Buyer, please wait until transaction has confirmed and then press 'I've Paid'.",
+            reply_markup=create_buttons([("I've Paid", "buyer_paid")])
         )
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Escrow {escrow['ticket']} has been marked as failed. Payment not received."
+            f"Admin denied payment for Escrow {escrow['ticket']}. Awaiting further confirmation."
+        )
+
+    # --- Seller Sent Goods ---
+    if data == "seller_sent_goods" and escrow["status"] == "awaiting_goods" and user_id == escrow["seller_id"]:
+        escrow["status"] = "awaiting_buyer_confirmation"
+        await context.bot.send_message(
+            chat_id,
+            "Seller has sent the goods/services. Buyer, please confirm once you have received the order.",
+            reply_markup=create_buttons([("I've Received the Goods/Services", "buyer_received_goods")])
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Seller sent goods/services for Escrow {escrow['ticket']}. Awaiting buyer confirmation."
+        )
+
+    # --- Buyer Received Goods ---
+    if data == "buyer_received_goods" and escrow["status"] == "awaiting_buyer_confirmation" and user_id == escrow["buyer_id"]:
+        escrow["status"] = "completed"
+        await context.bot.send_message(
+            chat_id,
+            "The goods/services have been confirmed as received. The transaction is now complete.",
+            reply_markup=create_buttons([("Cancel", "cancel_escrow")])
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} completed. Buyer @{username} confirmed receipt of goods/services."
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
