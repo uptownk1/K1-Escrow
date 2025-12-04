@@ -61,28 +61,23 @@ def create_escrow_buttons(escrow):
     return InlineKeyboardMarkup(buttons)
 
 def create_buttons(items):
-    """Generic button creator: items = list of tuples (text, callback_data)"""
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
 
 def get_crypto_price(symbol):
-    # Mapping user-friendly symbol to CoinGecko ID
     symbol_mapping = {
         "BTC": "bitcoin",
         "ETH": "ethereum",
         "LTC": "litecoin",
         "SOL": "solana"
     }
-
-    # Convert symbol to lowercase and map to CoinGecko ID
     coingecko_symbol = symbol_mapping.get(symbol.upper())
     if not coingecko_symbol:
         logging.error(f"Unsupported cryptocurrency symbol: {symbol}")
         return None
-
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_symbol}&vs_currencies={FIAT_CURRENCY}"
         response = requests.get(url)
-        response.raise_for_status()  # Raise an error if the response code is not 2xx
+        response.raise_for_status()
         data = response.json()
         return data[coingecko_symbol][FIAT_CURRENCY]
     except Exception as e:
@@ -188,78 +183,88 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "Buyer marked as paid, please wait for the admin to confirm payment."
         )
+        # Send message to admin with yes/no buttons
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']}. "
+            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']} in group {chat_id}. "
             "Please confirm if the payment was received.",
-            reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
+            reply_markup=create_buttons([
+                (f"Yes ({escrow['ticket']})", f"payment_received_{chat_id}"),
+                (f"No ({escrow['ticket']})", f"payment_not_received_{chat_id}")
+            ])
         )
 
-# ---------------- MESSAGE HANDLERS ----------------
+    # --- Admin confirms payment ---
+    if data.startswith("payment_received_") or data.startswith("payment_not_received_"):
+        # Extract original escrow chat_id from callback
+        original_chat_id = int(data.split("_")[-1])
+        escrow_confirm = escrows.get(original_chat_id)
+        if not escrow_confirm:
+            await query.message.reply_text("Escrow not found.")
+            return
 
-# Handle /amount command
+        if data.startswith("payment_received_"):
+            escrow_confirm["status"] = "payment_confirmed"
+            await context.bot.send_message(
+                original_chat_id,
+                f"Buyer @{escrow_confirm['buyer_id']} payment of £{escrow_confirm['fiat_amount']} (~{escrow_confirm['crypto_amount']} {escrow_confirm['crypto']}) "
+                "has been received in escrow. Seller please send the goods/services.",
+                reply_markup=create_buttons([
+                    ("I’ve sent the goods/services", "seller_sent_goods")
+                ])
+            )
+        else:
+            escrow_confirm["status"] = "awaiting_payment"
+            await context.bot.send_message(
+                original_chat_id,
+                "Payment has not yet been received in escrow. Buyer wait for transaction to confirm in your wallet and then press 'I’ve Paid' again.",
+                reply_markup=create_buttons([
+                    ("I’ve Paid", "buyer_paid")
+                ])
+            )
+
+# ---------------- MESSAGE HANDLERS ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    logging.info(f"Received message: {text} from user: {user_id}")
-
-    # Ensure that escrow exists
     escrow = escrows.get(chat_id)
     if not escrow:
-        logging.warning(f"No escrow found for chat_id {chat_id}.")
         await update.message.reply_text("No active escrow found. Please use /escrow to start a new trade.")
         return
 
-    # Ensure the status is "awaiting_amount" and that the buyer is sending the amount
     if escrow["status"] != "awaiting_amount" or escrow["buyer_id"] != user_id:
-        logging.warning(f"Escrow {escrow['ticket']} not in awaiting_amount state or user {user_id} is not the buyer.")
         await update.message.reply_text("Please make sure you are the buyer and in the correct state.")
         return
 
     try:
-        # Extract the fiat amount (assuming input format is `/amount <amount>`)
         fiat_amount = float(text.split()[1])
-        logging.info(f"Amount extracted: {fiat_amount} GBP.")
     except (IndexError, ValueError):
-        logging.warning(f"Invalid amount input from {user_id}: {text}")
         await update.message.reply_text("Please enter a valid amount after the /amount command (e.g., /amount 50).")
         return
 
-    # Fetch the price for the selected cryptocurrency
     crypto_symbol = escrow.get("crypto")
     if not crypto_symbol:
-        logging.error(f"Crypto symbol not set for escrow {escrow['ticket']}.")
         await update.message.reply_text("No cryptocurrency selected. Please select one first.")
         return
 
-    logging.info(f"Fetching price for {crypto_symbol}.")
     price = get_crypto_price(crypto_symbol)
-
-    # If price fetching fails
     if not price:
-        logging.error(f"Failed to fetch crypto price for {crypto_symbol}.")
         await update.message.reply_text("Error fetching crypto price. Please try again later.")
         return
 
-    # Calculate the crypto amount
     crypto_amount = round(fiat_amount / price, 8)
-    logging.info(f"Calculated crypto amount: {crypto_amount} {crypto_symbol}.")
 
-    # Update the escrow with the amount and status
     escrow["fiat_amount"] = fiat_amount
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
 
-    # Get the wallet address for the selected cryptocurrency
     wallet_address = ESCROW_WALLETS.get(crypto_symbol)
     if not wallet_address:
-        logging.error(f"Wallet address not found for {crypto_symbol}.")
         await update.message.reply_text(f"Sorry, we do not have a wallet address for {crypto_symbol}.")
         return
 
-    # Send the response to the buyer
     await update.message.reply_text(
         f"Amount: £{fiat_amount} (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
         f"Please send the crypto to the following wallet address:\n\n"
@@ -269,8 +274,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ("Cancel", "cancel_escrow")
         ])
     )
-    
-    # Log to the admin group about the escrow update
+
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"Escrow {escrow['ticket']} awaiting payment: Buyer @{update.message.from_user.username}, "
@@ -278,7 +282,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ---------------- MAIN ----------------
-
 def main():
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
     application = ApplicationBuilder().token(TOKEN).build()
@@ -287,7 +290,6 @@ def main():
     application.add_handler(CommandHandler("escrow", escrow_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="buyer_paid"))
 
     application.run_polling()
 
