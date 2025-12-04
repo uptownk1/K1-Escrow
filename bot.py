@@ -208,31 +208,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
         )
 
-# --- Admin Confirms Payment ---
-if data == "payment_received" or data == "payment_not_received":
-    payment_status = "received" if data == "payment_received" else "not received"
-    escrow["status"] = "payment_confirmed"
-    escrow["buyer_confirmed"] = data == "payment_received"
-    
-    # Send confirmation back to the **escrow group** (buyer/seller's group)
-    if escrow["buyer_confirmed"]:
-        # Ensure this is inside an async function
-        await context.bot.send_message(
-            escrow["group_id"],  # Send to the escrow group (where buyer and seller are)
-            f"Admin has confirmed that the payment was received. You may continue with the transaction."
-        )
-    else:
-        # Ensure this is inside an async function
-        await context.bot.send_message(
-            escrow["group_id"],  # Send to the escrow group (where buyer and seller are)
-            f"Admin has confirmed that the payment was not received. Please resolve the issue."
-        )
+    # --- Admin Confirms Payment ---
+    if data == "payment_received" or data == "payment_not_received":
+        payment_status = "received" if data == "payment_received" else "not received"
+        escrow["status"] = "payment_confirmed"
+        escrow["buyer_confirmed"] = data == "payment_received"
+        
+        # Send confirmation back to the **escrow group** (buyer/seller's group)
+        if escrow["buyer_confirmed"]:
+            await context.bot.send_message(
+                escrow["group_id"],  # Send to the escrow group (where buyer and seller are)
+                f"Admin has confirmed that the payment was received. You may continue with the transaction."
+            )
+        else:
+            await context.bot.send_message(
+                escrow["group_id"],  # Send to the escrow group (where buyer and seller are)
+                f"Admin has confirmed that the payment was not received. Please resolve the issue."
+            )
 
-    # Optionally, log it in the admin group (if needed for admin's own logging)
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
-    )
+        # Optionally, log it in the admin group (if needed for admin's own logging)
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
+        )
 
 # ---------------- MESSAGE HANDLERS ----------------
 
