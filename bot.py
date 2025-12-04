@@ -177,22 +177,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Escrow {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
         )
 
-    # --- Buyer Paid ---
-    if data == "buyer_paid" and escrow["status"] == "awaiting_payment" and user_id == escrow["buyer_id"]:
-        escrow["status"] = "awaiting_admin_confirmation"
-        await query.message.reply_text(
-            "Buyer marked as paid, please wait for the admin to confirm payment."
-        )
-        # Send message to admin with yes/no buttons
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']} in group {chat_id}. "
-            "Please confirm if the payment was received.",
-            reply_markup=create_buttons([
-                (f"Yes ({escrow['ticket']})", f"payment_received_{chat_id}"),
-                (f"No ({escrow['ticket']})", f"payment_not_received_{chat_id}")
-            ])
-        )
+   # --- Buyer Paid ---
+if data == "buyer_paid" and escrow["status"] == "awaiting_payment" and user_id == escrow["buyer_id"]:
+    escrow["status"] = "awaiting_admin_confirmation"
+    await query.message.reply_text(
+        "Buyer marked as paid, please wait for the admin to confirm payment."
+    )
+    # Send message to admin with yes/no buttons
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']} in group {chat_id}. "
+        "Please confirm if the payment was received.",
+        reply_markup=create_buttons([
+            (f"Yes ({escrow['ticket']})", f"payment_received_{chat_id}"),
+            (f"No ({escrow['ticket']})", f"payment_not_received_{chat_id}")
+        ])
+    )
 
     # --- Admin confirms payment ---
     if data.startswith("payment_received_") or data.startswith("payment_not_received_"):
