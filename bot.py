@@ -47,9 +47,9 @@ def create_new_escrow(chat_id):
         "ticket": ticket,
         "buyer_confirmed": False,
         "seller_confirmed": False,
-        "goods_sent": False,
-        "goods_received": False,
-        "disputed": False
+        "goods_sent": False,  # Track if seller has sent goods
+        "goods_received": False,  # Track if buyer has received goods
+        "disputed": False,  # Track if trade is disputed
     }
     escrows[chat_id] = escrow
     return escrow
@@ -118,6 +118,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     logging.info(f"[ADMIN HANDLER TRIGGERED] Callback data: {data}")
     await query.answer()
 
+    # Format: payment_received_ABC12345
     if "_" not in data:
         return
 
@@ -129,6 +130,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
 
     payment_ok = status_word == "received"
 
+    # Find escrow by ticket
     escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
     if not escrow:
         logging.warning(f"No escrow found for ticket {ticket}")
@@ -137,17 +139,20 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     escrow["status"] = "payment_confirmed"
     escrow["buyer_confirmed"] = payment_ok
 
+    # Notify admin group
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"Admin confirmed payment for Escrow {ticket}: {'RECEIVED' if payment_ok else 'NOT RECEIVED'}."
     )
 
+    # Notify trade group
     await context.bot.send_message(
         escrow["group_id"],
-        f"Admin has confirmed that the payment was "
-        f"{'received ✔️' if payment_ok else 'NOT received ❌'}.\n\n"
-        f"{'This payment has been confirmed and is currently held safely in escrow. Seller can now send the buyer the goods/services, and press below to confirm when done.' if payment_ok else 'Please resolve the payment issue.'}",
-        reply_markup=create_buttons([("I've sent the goods/services", "seller_sent_goods")])
+        "This payment has been confirmed and is currently held safely in escrow. "
+        "Seller can now send the buyer the goods/services, and press below to confirm when done.",
+        reply_markup=create_buttons([
+            ("I've sent the goods/services", "seller_sent_goods")
+        ])
     )
 
 # ---------------- CALLBACK HANDLER (ALL OTHER BUTTONS) ----------------
@@ -237,7 +242,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-# ---------------- HANDLE AMOUNT ----------------
+    # Seller has sent goods
+    if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
+        escrow["goods_sent"] = True
+        escrow["status"] = "awaiting_buyer_confirmation"
+
+        await query.message.reply_text("Seller has marked the goods/services as sent. "
+                                      )
+        await context.bot.send_message(
+            escrow["group_id"],
+            "Buyer, please confirm that you've received the goods/services and you're happy for payment to be released. "
+            "If you're not happy, dispute this trade below.",
+            reply_markup=create_buttons([
+                ("I've received the goods/services", "buyer_received_goods"),
+                ("Dispute this trade", "dispute_trade")
+            ])
+        )
+
+    # Buyer confirms receipt of goods
+    if data == "buyer_received_goods" and user_id == escrow["buyer_id"]:
+        escrow["goods_received"] = True
+        escrow["status"] = "complete"
+
+        await query.message.reply_text("Buyer has confirmed the receipt of goods/services. "
+                                      "The escrow is now complete. Thank you for using K1 Escrow.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} is now complete. Buyer has confirmed receipt of the goods/services."
+        )
+
+    # Dispute the trade
+    if data == "dispute_trade" and user_id == escrow["buyer_id"]:
+        escrow["disputed"] = True
+        escrow["status"] = "disputed"
+
+        await query.message.reply_text("This trade has been disputed. Admin will review the case.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} has been disputed by the buyer. Please review the case."
+        )
+
+# ---------------- MESSAGE HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -285,15 +330,25 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- MAIN ----------------
 def main():
-    application = ApplicationBuilder().token(TOKEN).build()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("escrow", escrow_command))
-    application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(CallbackQueryHandler(handle_admin_payment_confirmation, pattern=r"payment_(received|not_received)_\w{8}"))
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    application.run_polling()
+    # 🔥 ORDER MATTERS — ADMIN FIRST!!!
+    app.add_handler(CallbackQueryHandler(
+        handle_admin_payment_confirmation,
+        pattern=r"^payment_(received|not_received)_[A-Z0-9]+$"
+    ))
+
+    # Then all other callbacks
+    app.add_handler(CallbackQueryHandler(button_callback))
+
+    # Commands
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("escrow", escrow_command))
+    app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
