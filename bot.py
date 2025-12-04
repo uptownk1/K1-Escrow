@@ -214,38 +214,37 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.warning("No escrow found for this chat.")
         return
     
-    # Check if we are in the correct state
-    if escrow["status"] != "awaiting_amount" or user_id != escrow["buyer_id"]:
-        logging.warning(f"Status is not 'awaiting_amount' or user is not the buyer.")
+    # Ensure the user is the buyer and an escrow is in 'awaiting_amount' status
+    if escrow["status"] != "awaiting_amount" or escrow["buyer_id"] != user_id:
+        logging.warning("Escrow not in awaiting_amount state or user is not the buyer.")
         return
 
-    if not text.startswith("/amount"):
-        logging.warning(f"Message does not start with '/amount': {text}")
-        return
-
-    # Extract amount entered by buyer
-    amount_text = text.split()[1].strip()
     try:
-        fiat_amount = float(amount_text.replace("£", "").replace(",", ""))
-    except ValueError:
-        await update.message.reply_text(
-            "Invalid amount format. Please enter a valid GBP amount after the /amount command (e.g., /amount 1000)."
-        )
+        fiat_amount = float(text.split()[1])
+    except (IndexError, ValueError):
+        logging.warning(f"Invalid amount input from {user_id}: {text}")
+        await update.message.reply_text("Please enter a valid amount.")
         return
 
-    # Get the selected crypto
-    crypto_symbol = escrow["crypto"]
-    
-    # Fetch live price for the selected crypto
-    crypto_price = get_crypto_price(crypto_symbol)
-    if crypto_price is None:
+    logging.info(f"Processing amount: £{fiat_amount}")
+
+    # Get price of selected crypto
+    crypto_symbol = escrow.get("crypto")
+    if not crypto_symbol:
+        logging.error(f"Crypto symbol not set for escrow {escrow['ticket']}.")
+        await update.message.reply_text("No crypto selected.")
+        return
+
+    price = get_crypto_price(crypto_symbol)
+    if not price:
+        logging.error(f"Error fetching price for {crypto_symbol}.")
         await update.message.reply_text("Error fetching crypto price. Please try again later.")
         return
 
     # Calculate the equivalent crypto amount
-    crypto_amount = round(fiat_amount / crypto_price, 8)
+    crypto_amount = round(fiat_amount / price, 8)
 
-    # Update the escrow details
+    # Update the escrow with the amounts
     escrow["fiat_amount"] = fiat_amount
     escrow["crypto_amount"] = crypto_amount
     escrow["status"] = "awaiting_payment"
@@ -256,7 +255,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Sorry, we do not have a wallet address for {crypto_symbol}.")
         return
 
-    # Send the response to the buyer
+    # Send response to buyer
     await update.message.reply_text(
         f"Amount £{fiat_amount} (~{crypto_amount} {crypto_symbol}) has been registered for this escrow.\n\n"
         f"Please send the crypto to the following wallet address:\n\n"
