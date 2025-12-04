@@ -237,20 +237,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    # Seller has sent goods
-    if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
-        escrow["goods_sent"] = True
-        escrow["status"] = "awaiting_buyer_confirmation"
-
-        await query.message.reply_text("Seller has marked the goods/services as sent. "
-                                      "Buyer, please confirm when you've received the goods.")
-        await context.bot.send_message(
-            escrow["group_id"],
-            "Buyer please confirm that you've received the goods/services and are happy for payment to be released."
-            " If you are not happy, dispute this trade below.",
-            reply_markup=create_buttons([("I've received the goods/services", "buyer_received_goods")])
-        )
-
 # ---------------- MESSAGE HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -297,39 +283,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-async def handle_wallet_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-    text = update.message.text.strip()
-
-    escrow = escrows.get(chat_id)
-    if not escrow:
-        await update.message.reply_text("No active escrow. Use /escrow.")
-        return
-
-    if escrow["status"] != "awaiting_wallet_address" or escrow["seller_id"] != user_id:
-        await update.message.reply_text("You cannot enter wallet address now.")
-        return
-
-    # Save wallet address
-    escrow["wallet_address"] = text
-    escrow["status"] = "release_in_progress"
-
-    await update.message.reply_text("We are now releasing the payment to the seller's wallet. Please wait... You will receive confirmation once the payment has been sent.")
-    
-    # Notify admin group
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        f"Escrow {escrow['ticket']} - Seller's wallet: {text}\n"
-        f"Amount: {escrow['fiat_amount']} {FIAT_CURRENCY} ({escrow['crypto_amount']} {escrow['crypto']})"
-    )
-
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        "Press below to confirm payment release:",
-        reply_markup=create_buttons([("Payment Released", f"payment_released_{escrow['ticket']}")])
-    )
-
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -345,12 +298,10 @@ def main():
     # Then all other callbacks
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    # Handle seller's wallet address
-    app.add_handler(MessageHandler(filters.Text, handle_wallet_address))
-
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
+    app.add_handler(MessageHandler(filters.TEXT, handle_wallet_address))
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
 
     app.run_polling()
