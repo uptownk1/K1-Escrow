@@ -60,7 +60,11 @@ def create_escrow_buttons(escrow):
         buttons.append([InlineKeyboardButton("Join as Buyer", callback_data="join_buyer")])
     if not escrow["seller_id"]:
         buttons.append([InlineKeyboardButton("Join as Seller", callback_data="join_seller")])
-    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel_escrow")])
+    
+    # Only show Cancel button if the Buyer has not yet marked as paid
+    if escrow["status"] != "awaiting_admin_confirmation":
+        buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel_escrow")])
+    
     return InlineKeyboardMarkup(buttons)
 
 def create_buttons(items):
