@@ -214,19 +214,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "payment_confirmed"
         escrow["buyer_confirmed"] = data == "payment_received"
         
-        # Send confirmation back to the group
+        # Send confirmation back to the **escrow group**
         if escrow["buyer_confirmed"]:
             await context.bot.send_message(
-                chat_id,
+                escrow["group_id"],  # Send to escrow group instead of admin group
                 f"Admin has confirmed that the payment was received. You may continue with the transaction."
             )
         else:
             await context.bot.send_message(
-                chat_id,
+                escrow["group_id"],  # Send to escrow group instead of admin group
                 f"Admin has confirmed that the payment was not received. Please resolve the issue."
             )
 
-        # Notify admin group
+        # Notify admin group (this is still for logging/admin purposes, unchanged)
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
