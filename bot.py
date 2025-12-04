@@ -225,7 +225,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     try:
         # Send the confirmation to the escrow group (buyer and seller)
         await context.bot.send_message(
-            escrow["group_id"],  # Send to the escrow group (buyer and seller)
+            escrow["chat_id"],  # Send to the escrow group (buyer and seller)
             message_text
         )
         logging.info(f"Payment confirmation sent to group {escrow['group_id']}")
@@ -234,7 +234,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
 
     # Optionally, log it in the admin group (if needed for admin's own logging)
     await context.bot.send_message(
-        ADMIN_GROUP_ID,
+        chat_id,
         f"Admin confirmed payment status for Escrow Ticket {escrow['ticket']}: {payment_status}."
     )
 
