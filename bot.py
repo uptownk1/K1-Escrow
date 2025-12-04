@@ -184,15 +184,51 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Buyer Paid ---
     if data == "buyer_paid" and escrow["status"] == "awaiting_payment" and user_id == escrow["buyer_id"]:
+        # Mark escrow as awaiting admin confirmation
         escrow["status"] = "awaiting_admin_confirmation"
-        await query.message.reply_text(
-            "Buyer marked as paid, please wait for the admin to confirm payment."
-        )
+        
+        # Get the crypto and fiat details for the message
+        crypto_symbol = escrow["crypto"]
+        fiat_amount = escrow["fiat_amount"]
+        username = query.from_user.username
+
+        # Send message to admin asking for payment confirmation
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']}. "
-            "Please confirm if the payment was received.",
+            f"Buyer @{username} has marked escrow {escrow['ticket']} as paid. "
+            f"Details: {fiat_amount} GBP (~{escrow['crypto_amount']} {crypto_symbol})\n\n"
+            "Have you received the payment?",
             reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
+        )
+
+        # Notify the buyer that their payment status is awaiting admin confirmation
+        await query.message.reply_text(
+            "You have marked as paid. Please wait for admin to confirm the payment."
+        )
+
+    # --- Admin Response to Payment Confirmation ---
+    if data == "payment_received" or data == "payment_not_received":
+        payment_status = "received" if data == "payment_received" else "not received"
+        
+        # Update escrow with admin confirmation
+        escrow["status"] = f"payment_{payment_status}"
+        
+        # Notify the group based on admin response
+        if payment_status == "received":
+            confirmation_message = f"Yes, Buyer has paid for Escrow {escrow['ticket']}."
+        else:
+            confirmation_message = f"No, the transaction has not been received yet for Escrow {escrow['ticket']}."
+        
+        # Send confirmation back to the relevant group chat
+        await context.bot.send_message(
+            escrow["group_id"],  # This sends to the escrow group
+            confirmation_message
+        )
+
+        # Also notify the admin group about the admin response
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Admin has marked escrow {escrow['ticket']} as {payment_status}."
         )
 
 # ---------------- MESSAGE HANDLERS ----------------
