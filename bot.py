@@ -205,12 +205,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # --- Admin Confirms Payment ---
-async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat_id
-    escrow = escrows.get(chat_id)
+    data = query.data
+    escrow = escrows.get(query.message.chat_id)
     if not escrow:
-        logging.warning(f"No escrow found for chat_id {chat_id}.")
+        logging.warning(f"No escrow found for chat_id {query.message.chat_id}.")
         return
 
     payment_status = "received" if data == "payment_received" else "not received"
@@ -223,6 +223,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     )
 
     try:
+        # Send the confirmation to the escrow group (buyer and seller)
         await context.bot.send_message(
             escrow["group_id"],  # Send to the escrow group (buyer and seller)
             message_text
