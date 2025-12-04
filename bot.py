@@ -219,9 +219,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             confirmation_message = f"No, the transaction has not been received yet for Escrow {escrow['ticket']}."
         
-        # Send confirmation back to the relevant group chat
+        # **FIX**: Send the confirmation message to the relevant group chat
         await context.bot.send_message(
-            escrow["group_id"],  # This sends to the escrow group
+            escrow["group_id"],  # This sends to the specific escrow group
             confirmation_message
         )
 
