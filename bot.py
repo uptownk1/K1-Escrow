@@ -185,12 +185,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"Received message: {update.message.text}")
 
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
+
+    logging.info(f"Received message from user {user_id} in group {chat_id}: {text}")
+
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    logging.info(f"Received message: {text} from user: {user_id}")
+    logging.info(f"Received message: {text} from user: {user_id} in group {chat_id}")
 
     # Ensure that escrow exists
     escrow = escrows.get(chat_id)
