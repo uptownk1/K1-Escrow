@@ -248,7 +248,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "awaiting_buyer_confirmation"
 
         await query.message.reply_text("Seller has marked the goods/services as sent. "
-                                      "Buyer, please confirm when you've received the goods.")
+                                      )
         await context.bot.send_message(
             escrow["group_id"],
             "Buyer, please confirm that you've received the goods/services and you're happy for payment to be released. "
