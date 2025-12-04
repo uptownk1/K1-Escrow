@@ -203,6 +203,9 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     data = query.data  # This will be 'payment_received' or 'payment_not_received'
     
+    # Log query data to verify callback is being triggered correctly
+    logging.info(f"Admin Response Handler triggered with data: {data} by user {user_id}")
+
     # Ensure that only the admin can handle this
     if user_id != ADMIN_GROUP_ID:
         await query.message.reply_text("You are not authorized to perform this action.")
@@ -211,6 +214,9 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
     # Get the corresponding escrow object for this group (escrow is stored by group chat ID)
     chat_id = query.message.chat_id
     escrow = escrows.get(chat_id)
+
+    # Log the escrow data to make sure we have the correct group chat ID
+    logging.info(f"Escrow data for chat_id {chat_id}: {escrow}")
 
     # If no active escrow exists, notify the admin
     if not escrow:
@@ -227,6 +233,9 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
         escrow["status"] = "completed"  # Mark escrow as completed
         await query.message.reply_text("Payment confirmed. Escrow is now complete.")
 
+        # Log the decision for debugging
+        logging.info(f"Escrow {escrow['ticket']} confirmed as completed by admin.")
+
         # Notify the admin and update the participants (buyer, seller)
         await context.bot.send_message(
             ADMIN_GROUP_ID,
@@ -238,13 +247,16 @@ async def admin_response_handler(update: Update, context: ContextTypes.DEFAULT_T
         # Notify the relevant group that the transaction is complete
         await context.bot.send_message(escrow["group_id"], "Escrow completed successfully. Payment received.")
 
-        # Optionally, trigger next steps in escrow group (if required)
-        # If you need to continue the flow, you can add more logic here, such as sending additional instructions.
+        # Optional: Trigger next steps in escrow group (if required)
+        # Example: Finalize trade, release funds, etc.
 
     # Admin denies payment (payment not received)
     elif data == "payment_not_received":
         escrow["status"] = "failed"  # Mark escrow as failed
         await query.message.reply_text("Payment not received. Escrow has been failed.")
+
+        # Log the decision for debugging
+        logging.info(f"Escrow {escrow['ticket']} marked as failed by admin.")
 
         # Notify the admin and update the participants (buyer, seller)
         await context.bot.send_message(
