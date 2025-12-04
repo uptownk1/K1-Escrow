@@ -264,6 +264,36 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Amount: £{fiat_amount} / {crypto_amount} {crypto_symbol}, Wallet: {wallet_address}"
     )
 
+# ---------------- CALLBACK HANDLER FOR BUYER PAID ----------------
+
+async def buyer_paid_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    username = query.from_user.username or query.from_user.first_name
+
+    escrow = escrows.get(chat_id)
+    if not escrow or escrow["status"] != "awaiting_payment":
+        await query.message.reply_text("You can’t mark as paid right now.")
+        return
+
+    # Send confirmation message to buyer and admin
+    await query.message.reply_text(
+        "Buyer marked as paid, please wait whilst payment is confirmed. "
+        "SELLER DO NOT send any goods/services until we confirm payment is received..."
+    )
+
+    # Send message to admin for confirmation
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"Buyer @{username} has marked as paid for Escrow {escrow['ticket']}. "
+        f"Have funds been received?\n\n"
+        "Press Yes if the funds have been received, No if the transaction has not yet been received.",
+        reply_markup=create_buttons([("Yes", "payment_received"), ("No", "payment_not_received")])
+    )
+
 # ---------------- MAIN ----------------
 
 def main():
@@ -274,6 +304,7 @@ def main():
     application.add_handler(CommandHandler("escrow", escrow_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(CallbackQueryHandler(buyer_paid_handler, pattern="buyer_paid"))
 
     application.run_polling()
 
