@@ -1,6 +1,5 @@
 import os
 import logging
-import sys
 from uuid import uuid4
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -94,109 +93,102 @@ async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- CALLBACKS ----------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    username = query.from_user.username or query.from_user.first_name
+    data = query.data
 
-    try:
-        # Answer immediately to avoid timeout
-        await query.answer()
+    escrow = escrows.get(chat_id)
+    if not escrow:
+        escrow = create_new_escrow(chat_id)
 
-        chat_id = query.message.chat_id
-        user_id = query.from_user.id
-        username = query.from_user.username or query.from_user.first_name
-        data = query.data
+    # --- Cancel Escrow ---
+    if data == "cancel_escrow":
+        if escrow:
+            escrows.pop(chat_id)
+        await query.message.reply_text(
+            "Escrow has been closed, use /escrow to open a new trade."
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID, f"Escrow {escrow['ticket']} in group {chat_id} was cancelled."
+        )
+        return
 
-        escrow = escrows.get(chat_id)
-        if not escrow:
-            escrow = create_new_escrow(chat_id)
+    # --- Join Buyer ---
+    if data == "join_buyer" and not escrow["buyer_id"]:
+        escrow["buyer_id"] = user_id
+        await query.message.reply_text(f"You have joined as Buyer. Ticket: {escrow['ticket']}")
+        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
+        await context.bot.send_message(
+            ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Buyer @{username} joined group {chat_id}."
+        )
 
-        # --- Cancel Escrow ---
-        if data == "cancel_escrow":
-            if escrow:
-                escrows.pop(chat_id)
-            await query.message.reply_text(
-                "Escrow has been closed, use /escrow to open a new trade."
-            )
-            await context.bot.send_message(
-                ADMIN_GROUP_ID, f"Escrow {escrow['ticket']} in group {chat_id} was cancelled."
-            )
-            return
+    # --- Join Seller ---
+    if data == "join_seller" and not escrow["seller_id"]:
+        escrow["seller_id"] = user_id
+        await query.message.reply_text(f"You have joined as Seller. Ticket: {escrow['ticket']}")
+        await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
+        await context.bot.send_message(
+            ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Seller @{username} joined group {chat_id}."
+        )
 
-        # --- Join Buyer ---
-        if data == "join_buyer" and not escrow["buyer_id"]:
-            escrow["buyer_id"] = user_id
-            await query.message.reply_text(f"You have joined as Buyer. Ticket: {escrow['ticket']}")
-            await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
-            await context.bot.send_message(
-                ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Buyer @{username} joined group {chat_id}."
-            )
+    # --- Both parties joined ---
+    if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
+        escrow["status"] = "crypto_selection"
+        await context.bot.send_message(
+            chat_id,
+            f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n\n"
+            "Buyer, please select a cryptocurrency:",
+            reply_markup=create_buttons([
+                ("BTC","crypto_BTC"),
+                ("ETH","crypto_ETH"),
+                ("LTC","crypto_LTC"),
+                ("SOL","crypto_SOL")
+            ])
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer ID {escrow['buyer_id']} "
+            f"and Seller ID {escrow['seller_id']}."
+        )
 
-        # --- Join Seller ---
-        if data == "join_seller" and not escrow["seller_id"]:
-            escrow["seller_id"] = user_id
-            await query.message.reply_text(f"You have joined as Seller. Ticket: {escrow['ticket']}")
-            await query.message.edit_reply_markup(reply_markup=create_escrow_buttons(escrow))
-            await context.bot.send_message(
-                ADMIN_GROUP_ID, f"Escrow {escrow['ticket']}: Seller @{username} joined group {chat_id}."
-            )
-
-        # --- Both parties joined ---
-        if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
-            escrow["status"] = "crypto_selection"
-            await context.bot.send_message(
-                chat_id,
-                f"Both parties have joined successfully! Escrow Ticket: {escrow['ticket']}\n\n"
-                "Buyer, please select a cryptocurrency:",
-                reply_markup=create_buttons([
-                    ("BTC","crypto_BTC"),
-                    ("ETH","crypto_ETH"),
-                    ("LTC","crypto_LTC"),
-                    ("SOL","crypto_SOL")
-                ])
-            )
-            await context.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"Escrow {escrow['ticket']} started in group {chat_id} with Buyer ID {escrow['buyer_id']} "
-                f"and Seller ID {escrow['seller_id']}."
-            )
-
-        # --- Crypto selection ---
-        if data.startswith("crypto_") and escrow["status"] == "crypto_selection" and user_id == escrow["buyer_id"]:
-            crypto = data.split("_")[1]
-            escrow["crypto"] = crypto
-            escrow["status"] = "awaiting_amount"
-            await query.message.reply_text(
-                f"Crypto selected: {crypto}. Buyer, please type the amount in GBP (e.g., £1,000 or 1000):"
-            )
-            await context.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"Escrow {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
-            )
-    except telegram.error.BadRequest as e:
-        logging.error(f"Error answering callback query: {e}")
-
-        # Automatically restart the bot when the error occurs (e.g., 'query too old' error)
-        if "query is too old" in str(e):
-            logging.warning("Query timeout expired, restarting bot...")
-            # Restart the bot by exiting the process
-            os.execv(sys.executable, ['python'] + sys.argv)
+    # --- Crypto selection ---
+    if data.startswith("crypto_") and escrow["status"] == "crypto_selection" and user_id == escrow["buyer_id"]:
+        crypto = data.split("_")[1]
+        escrow["crypto"] = crypto
+        escrow["status"] = "awaiting_amount"
+        await query.message.reply_text(
+            f"Crypto selected: {crypto}. Please use the /amount <amount> command to specify the GBP amount you want to pay."
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"Escrow {escrow['ticket']}: Buyer @{username} selected crypto {crypto}."
+        )
 
 # ---------------- MESSAGE HANDLERS ----------------
 
-# Debugging: Handle all messages and log them
+# Handle all messages and log them
 async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received message: {update.message.text}")
+    logging.info(f"Received message: {update.message.text} from user: {update.message.from_user.id} in chat: {update.message.chat_id}")
 
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-    text = update.message.text.strip()
+    # Check if it's from a group chat
+    if update.message.chat.type in ['group', 'supergroup']:
+        logging.info(f"Received message from group: {update.message.chat.title}")
 
-    logging.info(f"Received message from user {user_id} in group {chat_id}: {text}")
+    # Ensure we're handling only the 'awaiting_amount' state for the buyer
+    escrow = escrows.get(update.message.chat_id)
+    if escrow and escrow['status'] == 'awaiting_amount' and update.message.from_user.id == escrow['buyer_id']:
+        logging.info(f"Buyer entered amount: {update.message.text}")
+        # Proceed with processing the amount if valid (this logic is in handle_amount)
 
+# Handle /amount messages
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    logging.info(f"Received message: {text} from user: {user_id} in group {chat_id}")
+    logging.info(f"Received message for amount: {text} from user: {user_id} in chat: {chat_id}")
 
     # Ensure that escrow exists
     escrow = escrows.get(chat_id)
@@ -261,7 +253,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages to debug
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_all_messages))  # Handle all messages
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_amount))  # Handle /amount
 
     logging.info("Bot is running...")  # Ensure this prints
