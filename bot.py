@@ -230,7 +230,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "crypto_selection"
         await context.bot.send_message(
             chat_id,
-            "Status: Both Parties Joined ✅\nAction: Buyer, select payment method 👇",
+            "Status: Both Parties Joined ✅\nTicket Number: {escrow['ticket']} 🎟️\nAction: Buyer, select payment method 👇",
             reply_markup=create_buttons([
                 ("BTC", "crypto_BTC"),
                 ("ETH", "crypto_ETH"),
@@ -246,7 +246,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "awaiting_amount"
 
         await query.message.reply_text(
-            f"Status: Payment Method 💷\nAction: You selected {crypto} 🪙\nResponse: Now type the amount in GBP using /amount command ✍️\n(e.g /amount 100)"
+            f"Status: Payment Method 💷\nTicket Number: {escrow['ticket']} 🎟️\nAction: You selected {crypto} 🪙\nResponse: Now type the amount in GBP using /amount command ✍️\n(e.g /amount 100)"
         )
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
 
@@ -254,7 +254,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buyer_paid" and user_id == escrow["buyer_id"]:
         escrow["status"] = "awaiting_admin_confirmation"
 
-        await query.message.reply_text("Status: Awaiting Payment ⏳\nAction: Buyer Payment marked as sent. Please wait whilst we confirm this transaction on our network...")
+        await query.message.reply_text("Status: Awaiting Payment ⏳\nTicket Number: {escrow['ticket']} 🎟️\nAction: Buyer Payment marked as sent\nResponse: Please wait whilst we confirm this transaction on our network...")
 
         # Remove Cancel button, add Dispute button
         await query.message.edit_reply_markup(create_buttons([
@@ -264,7 +264,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"Buyer @{username} marked payment sent for Escrow {escrow['ticket']}.\nConfirm?",
+            f"Status: Buyer @{username} marked as paid\n\nTicket Number: {escrow['ticket']} 🎟️\nAmount: £{amount} / {crypto_amount} {crypto}\nConfirm?",
             reply_markup=create_buttons([
                 ("Yes ✅", f"payment_received_{escrow['ticket']}"),
                 ("No ❌", f"payment_not_received_{escrow['ticket']}")
