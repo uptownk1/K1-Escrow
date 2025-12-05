@@ -96,10 +96,10 @@ def get_crypto_price(symbol):
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖Welcome To K1 Escrow Bot!🤖\n"
-        "1) Add this bot into group with buyer+seller"
-        "2) /escrow to start trade\n"
-        "NOTE: /rules to read the terms+conditions of the escrow service"
+        "🤖**Welcome To K1 Escrow Bot!**🤖\n"
+        "This bot charges a 5% fee from each successful trade 💸"
+        "1) Add this bot into group with buyer+seller 💬"
+        "2) /escrow to start trade 😊\n"
     )
 
 async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
