@@ -151,10 +151,10 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
         # Notify trade group (buyer and seller)
         await context.bot.send_message(
             escrow["group_id"],
-            "This payment has been confirmed and is currently held safely in escrow. "
-            "Seller can now send the buyer the goods/services, and press below to confirm when done.",
+            "Status: In Escrow 🔐\nAction: Payment of £{amount} / {crypto_amount} {crypto} received ✅ "
+            "Action: Seller can now send the buyer the goods/services, and press below to confirm when done 👇",
             reply_markup=create_buttons([
-                ("I've sent the goods/services", "seller_sent_goods")
+                ("I've sent the goods/services ✅", "seller_sent_goods")
             ])
         )
     else:
@@ -255,12 +255,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buyer_paid" and user_id == escrow["buyer_id"]:
         escrow["status"] = "awaiting_admin_confirmation"
 
-        await query.message.reply_text("Payment marked as sent. Waiting for admin confirmation...")
+        await query.message.reply_text("Status: Awaiting Payment ⏳\nAction: Buyer payment marked as sent.\nResponse: Please wait whilst we check for the transaction on our network...")
 
         # Remove Cancel button, add Dispute button
         await query.message.edit_reply_markup(create_buttons([
-            ("I've Paid", "buyer_paid"),
-            ("Dispute this trade", "dispute_trade")
+            ("I've Paid ✅", "buyer_paid"),
+            ("Dispute this trade 🛑", "dispute_trade")
         ]))
 
         await context.bot.send_message(
@@ -277,15 +277,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["goods_sent"] = True
         escrow["status"] = "awaiting_buyer_confirmation"
 
-        await query.message.reply_text("Seller has marked the goods/services as sent. "
+        await query.message.reply_text("Status: In Escrow 🔐\nAction: Seller has marked the goods/services as sent 📦 "
                                       )
         await context.bot.send_message(
             escrow["group_id"],
-            "Buyer, please confirm that you've received the goods/services and you're happy for payment to be released. "
-            "If you're not happy, dispute this trade below.",
+            "Status: In Escrow 🔐\nAction: If happy with order you received, press to release funds below 👇"
+            "Response: If not happy with trade, dispute below for manual review 🛑",
             reply_markup=create_buttons([
-                ("I've received the goods/services", "buyer_received_goods"),
-                ("Dispute this trade", "dispute_trade")
+                ("I've received the goods/services ✅", "buyer_received_goods"),
+                ("Dispute this trade ❌", "dispute_trade")
             ])
         )
 
@@ -347,10 +347,11 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"Status: Awaiting Payment ⏳\n"
-        f"Amount:£{amount}\n"
-        f"Amount In {crypto}:  {crypto_amount} \n"
+        f"Amount 💷: £{amount}\n"
+        f"Amount In {crypto} 🪙:  {crypto_amount} {crypto}\n"
         "\n"
         f"Send exact amount to:\n\n{wallet}\n\n"
+        "Tap on wallet to copy 📋"
         "Confirm below when sent 👇",
         reply_markup=create_buttons([
             ("I've Paid ✅", "buyer_paid"),
