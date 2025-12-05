@@ -254,7 +254,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buyer_paid" and user_id == escrow["buyer_id"]:
         escrow["status"] = "awaiting_admin_confirmation"
 
-        await query.message.reply_text("Status: Awaiting Payment ⏳\nTicket Number: {escrow['ticket']} 🎟️\nAction: Buyer Payment marked as sent\nResponse: Please wait whilst we confirm this transaction on our network...")
+        await query.message.reply_text(f"Status: Awaiting Payment ⏳\nTicket Number: {escrow['ticket']} 🎟️\nAction: Buyer marked as paid 🪙\nResponse: Please wait whilst we confirm this transaction on our network... ⏳")
 
         # Remove Cancel button, add Dispute button
         await query.message.edit_reply_markup(create_buttons([
@@ -345,9 +345,10 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet = ESCROW_WALLETS.get(crypto)
 
     await update.message.reply_text(
-        f"Status: Buyer Deposit ⏳/n Amount: £{amount} 💷\nAmount in {crypto}: {crypto_amount} {crypto} 🪙\n"
+        f"Status: Buyer Deposit ⏳\nAmount: £{amount} 💷\n{crypto} Amount: {crypto_amount} {crypto} 🪙\n"
         f"Send exact amount to:\n\n{wallet}\n\n"
         "Tap wallet address to copy 📋\n"
+        "\n"
         "Confirm below once payment is made 👇",
         reply_markup=create_buttons([
             ("I've Paid ✅", "buyer_paid"),
