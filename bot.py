@@ -50,6 +50,7 @@ def create_new_escrow(chat_id):
         "goods_sent": False,
         "goods_received": False,
         "disputed": False,
+        "last_message_id": None  # track the most recent bot message for button updates
     }
     escrows[chat_id] = escrow
     return escrow
@@ -82,22 +83,14 @@ def get_crypto_price(symbol):
         response.raise_for_status()
         data = response.json()
         price = data.get(coingecko_symbol, {}).get(FIAT_CURRENCY)
-        if price is None:
-            logging.error(f"Price for {symbol} not found in response.")
-            return None
         return price
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching crypto price for {symbol}: {e}")
-        return None
-    except ValueError:
-        logging.error(f"Error parsing response for {symbol}")
+    except:
         return None
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Welcome To K1 Escrow Bot! 🤖\n"
-        "\n"
+        "🤖 Welcome To K1 Escrow Bot! 🤖\n\n"
         "1) Add this bot to group with buyer/seller\n"
         "2) /escrow to start a trade\n"
     )
@@ -124,34 +117,35 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     try:
         _, status_word, ticket = data.split("_")
     except ValueError:
-        logging.warning("Invalid admin callback format")
         return
 
     payment_ok = status_word == "received"
     escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
     if not escrow:
-        logging.warning(f"No escrow found for ticket {ticket}")
         return
 
-    buyer_username = (await context.bot.get_chat_member(escrow["group_id"], escrow["buyer_id"])).user.username
-    seller_username = (await context.bot.get_chat_member(escrow["group_id"], escrow["seller_id"])).user.username
+    buyer_member = await context.bot.get_chat_member(escrow["group_id"], escrow["buyer_id"])
+    seller_member = await context.bot.get_chat_member(escrow["group_id"], escrow["seller_id"])
+    buyer_username = buyer_member.user.username
+    seller_username = seller_member.user.username
 
     if payment_ok:
         escrow["status"] = "payment_confirmed"
         escrow["buyer_confirmed"] = True
 
-        # Notify admin
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"*Status:* Payment Confirmed ✅\n"
-            f"*Action:* Buyer @{buyer_username} (Buyer) payment received\n"
-            f"*Ticket:* {escrow['ticket']} 🎟️\n"
-            f"*Amount:* £{escrow['fiat_amount']} / {escrow['crypto_amount']} {escrow['crypto']}",
-            parse_mode="Markdown"
-        )
+        # Remove buttons from last bot message in trade group
+        if escrow.get("last_message_id"):
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=escrow["group_id"],
+                    message_id=escrow["last_message_id"],
+                    reply_markup=None
+                )
+            except:
+                pass  # ignore if already deleted
 
-        # Notify trade group
-        await context.bot.send_message(
+        # Send updated message with only dispute button
+        sent_msg = await context.bot.send_message(
             escrow["group_id"],
             f"Status: Payment Received ✅\nTicket Number: {escrow['ticket']} 🎟️\n"
             "Seller can now send goods/services 👇",
@@ -160,24 +154,26 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
                 ("Dispute 🛑", "dispute_trade")
             ])
         )
+        escrow["last_message_id"] = sent_msg.message_id
+
+        # Admin notification
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"*Status:* Payment Confirmed ✅\n"
+            f"*Action:* Buyer @{buyer_username} (Buyer) payment received\n"
+            f"*Ticket:* {escrow['ticket']} 🎟️\n"
+            f"*Amount:* £{escrow['fiat_amount']} / {escrow['crypto_amount']} {escrow['crypto']}",
+            parse_mode="Markdown"
+        )
     else:
         escrow["status"] = "payment_not_received"
         escrow["buyer_confirmed"] = False
-
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"*Status:* Payment Not Received ❌\n"
             f"*Action:* Buyer @{buyer_username} (Buyer) payment not confirmed\n"
             f"*Ticket:* {escrow['ticket']} 🎟️",
             parse_mode="Markdown"
-        )
-
-        await context.bot.send_message(
-            escrow["group_id"],
-            "Payment has not yet been received. You will receive an update when payment is confirmed.",
-            reply_markup=create_buttons([
-                ("Dispute 🛑", "dispute_trade")
-            ])
         )
 
 # ---------------- CALLBACK HANDLER (ALL OTHER BUTTONS) ----------------
@@ -200,9 +196,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Escrow cancelled. Use /escrow to start again.")
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"*Status:* Escrow Cancelled ❌\n"
-            f"*Action:* @{username} cancelled escrow\n"
-            f"*Ticket:* {escrow['ticket']} 🎟️",
+            f"*Status:* Escrow Cancelled ❌\n*Action:* @{username} cancelled escrow\n*Ticket:* {escrow['ticket']} 🎟️",
             parse_mode="Markdown"
         )
         return
@@ -210,9 +204,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Join Buyer
     if data == "join_buyer" and not escrow["buyer_id"]:
         escrow["buyer_id"] = user_id
-        await query.message.reply_text(
-            f"Status: New Trade 🤝\nAction: @{username} joined as Buyer 💷\nResponse: Waiting for Seller 📦\nTicket Number: {escrow['ticket']} 🎟️"
-        )
+        await query.message.reply_text(f"Status: New Trade 🤝\nAction: @{username} joined as Buyer 💷\nTicket Number: {escrow['ticket']} 🎟️")
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID,
@@ -223,9 +215,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Join Seller
     if data == "join_seller" and not escrow["seller_id"]:
         escrow["seller_id"] = user_id
-        await query.message.reply_text(
-            f"Status: New Trade 🤝\nAction: @{username} joined as Seller 📦\nResponse: Waiting for Buyer ⏳\nTicket Number: {escrow['ticket']} 🎟️"
-        )
+        await query.message.reply_text(f"Status: New Trade 🤝\nAction: @{username} joined as Seller 📦\nTicket Number: {escrow['ticket']} 🎟️")
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
         await context.bot.send_message(
             ADMIN_GROUP_ID,
@@ -253,43 +243,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["crypto"] = crypto
         escrow["status"] = "awaiting_amount"
 
-        await query.message.reply_text(
-            f"Status: Payment Method 💷\nTicket Number: {escrow['ticket']} 🎟️\nAction: You selected {crypto} 🪙\nResponse: Now type the amount in GBP using /amount command ✍️\n(e.g /amount 100)"
-        )
+        await query.message.reply_text(f"Status: Payment Method 💷\nTicket Number: {escrow['ticket']} 🎟️\nAction: You selected {crypto} 🪙\nResponse: Now type the amount in GBP using /amount command ✍️")
 
-        # Notify admin
         await context.bot.send_message(
             ADMIN_GROUP_ID,
             f"*Status:* Payment Method Selected 💳\n*Action:* Buyer @{username} selected {crypto}\n*Ticket:* {escrow['ticket']} 🎟️",
             parse_mode="Markdown"
-        )
-
-    # Buyer paid
-    if data == "buyer_paid" and user_id == escrow["buyer_id"]:
-        escrow["status"] = "awaiting_admin_confirmation"
-        amount = escrow.get("fiat_amount", "Unknown")
-        crypto_amount = escrow.get("crypto_amount", "Unknown")
-        crypto = escrow.get("crypto", "Unknown")
-
-        await query.message.reply_text(
-            f"Status: Awaiting Payment ⏳\nTicket Number: {escrow['ticket']} 🎟️\nAction: Buyer marked as paid 🪙\nResponse: Please wait whilst we confirm this transaction on our network... ⏳",
-            reply_markup=create_buttons([
-                ("Dispute 🛑", "dispute_trade")
-            ])
-        )
-
-        # Notify admin with yes/no buttons
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"*Status:* Awaiting Payment Confirmation ⏳\n"
-            f"*Action:* Buyer @{username} (Buyer) marked as paid\n"
-            f"*Ticket:* {escrow['ticket']} 🎟️\n"
-            f"*Amount:* £{amount} / {crypto_amount} {crypto}",
-            parse_mode="Markdown",
-            reply_markup=create_buttons([
-                ("Yes ✅", f"payment_received_{escrow['ticket']}"),
-                ("No ❌", f"payment_not_received_{escrow['ticket']}")
-            ])
         )
 
 # ---------------- MESSAGE HANDLER ----------------
@@ -327,7 +286,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     wallet = ESCROW_WALLETS.get(crypto)
 
-    await update.message.reply_text(
+    sent_msg = await update.message.reply_text(
         f"Status: Buyer Deposit ⏳\nAmount: £{amount} 💷\n{crypto} Amount: {crypto_amount} {crypto} 🪙\n\n"
         f"Wallet Address (tap and copy):\n`{wallet}`",
         parse_mode="Markdown",
@@ -336,8 +295,8 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ("Dispute 🛑", "dispute_trade")
         ])
     )
+    escrow["last_message_id"] = sent_msg.message_id
 
-    # Notify admin
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"*Status:* Payment Amount Set 💷\n*Action:* Buyer @{update.message.from_user.username} set amount £{amount} / {crypto_amount} {crypto}\n*Ticket:* {escrow['ticket']} 🎟️",
@@ -350,16 +309,15 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # 🔥 ORDER MATTERS — ADMIN FIRST!!!
+    # Admin first
     app.add_handler(CallbackQueryHandler(
         handle_admin_payment_confirmation,
         pattern=r"^payment_(received|not_received)_[A-Z0-9]+$"
     ))
 
-    # Then all other callbacks
+    # All other callbacks
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
