@@ -107,7 +107,7 @@ async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         create_new_escrow(chat_id)
     escrow = escrows[chat_id]
     await update.message.reply_text(
-        "Select your role to start escrow 👇",
+        "Both select your role to start escrow 👇",
         reply_markup=create_escrow_buttons(escrow)
     )
 
@@ -229,7 +229,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "crypto_selection"
         await context.bot.send_message(
             chat_id,
-            "Status: Both parties joined ✅ \nBuyer, select payment method 👇",
+            "Status: Both parties joined ✅ \n"
+            "\n"
+            "Action: Buyer, select payment method 👇",
             reply_markup=create_buttons([
                 ("BTC", "crypto_BTC"),
                 ("ETH", "crypto_ETH"),
@@ -245,7 +247,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "awaiting_amount"
 
         await query.message.reply_text(
-            f"Status: Awaiting Payment\nYou selected {crypto}. \nNow type amount in GBP using /amount\n E.G /amount 100"
+            f"Status: Payment Method\nPayment Method: {crypto}. \nNow type the amount in GBP using /amount\n (E.G /amount 100)"
         )
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
 
@@ -344,12 +346,15 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet = ESCROW_WALLETS.get(crypto)
 
     await update.message.reply_text(
-        f"£{amount} = approx {crypto_amount} {crypto}\n"
-        f"Send to:\n{wallet}\n\n"
-        "Press 'I've Paid' once complete.",
+        f"Status: Awaiting Payment ⏳\n"
+        f"Amount:£{amount}\n"
+        f"Amount In {crypto}:  {crypto_amount} \n"
+        "\n"
+        f"Send exact amount to:\n\n{wallet}\n\n"
+        "Confirm below when sent 👇",
         reply_markup=create_buttons([
-            ("I've Paid", "buyer_paid"),
-            ("Cancel", "cancel_escrow")
+            ("I've Paid ✅", "buyer_paid"),
+            ("Cancel ❌", "cancel_escrow")
         ])
     )
 
