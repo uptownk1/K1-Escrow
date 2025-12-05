@@ -14,19 +14,13 @@ from telegram.ext import (
 
 # ---------------- CONFIG ----------------
 TOKEN = os.environ.get("TOKEN")
-ADMIN_GROUP_ID = os.environ.get("ADMIN_GROUP_ID")
-if ADMIN_GROUP_ID is None:
-    print("ADMIN_GROUP_ID not set! Exiting.")
-    exit(1)
-ADMIN_GROUP_ID = int(ADMIN_GROUP_ID)
-
+ADMIN_GROUP_ID = int(os.environ.get("ADMIN_GROUP_ID"))
 ESCROW_WALLETS = {
     "BTC": os.environ.get("BTC_WALLET"),
     "ETH": os.environ.get("ETH_WALLET"),
     "LTC": os.environ.get("LTC_WALLET"),
     "SOL": os.environ.get("SOL_WALLET")
 }
-
 FIAT_CURRENCY = "gbp"
 
 # ---------------- DATA ----------------
@@ -45,12 +39,7 @@ def create_new_escrow(chat_id):
         "crypto_amount": None,
         "wallet_address": None,
         "ticket": ticket,
-        "buyer_confirmed": False,
-        "seller_confirmed": False,
-        "goods_sent": False,
-        "goods_received": False,
-        "disputed": False,
-        "button_message_ids": []  # store message ids of buttons for later clearing
+        "button_message_ids": [],  # Track all messages with buttons
     }
     escrows[chat_id] = escrow
     return escrow
@@ -58,169 +47,254 @@ def create_new_escrow(chat_id):
 def create_buttons(items):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=cb)] for text, cb in items])
 
-def clear_buttons(context, escrow):
-    """Clears previous buttons for a specific escrow."""
-    for msg_id in escrow["button_message_ids"]:
+def clear_buttons(context: ContextTypes.DEFAULT_TYPE, escrow: dict):
+    """Clear reply_markup from all previous messages with buttons."""
+    for msg_id in escrow.get("button_message_ids", []):
         try:
-            context.bot.edit_message_reply_markup(escrow["group_id"], msg_id, reply_markup=None)
-        except Exception as e:
-            logging.error(f"Failed to clear buttons for message {msg_id}: {e}")
-    escrow["button_message_ids"] = []  # reset message ids
+            context.bot.edit_message_reply_markup(chat_id=escrow["group_id"], message_id=msg_id, reply_markup=None)
+        except:
+            pass
+    escrow["button_message_ids"] = []
 
-async def update_buttons_for_payment_status(context, escrow, buyer_paid=False):
-    """Sets the correct buttons based on payment status."""
-    clear_buttons(context, escrow)
-    
-    if not buyer_paid:
-        # Before buyer marks as paid: show Cancel button for buyer
-        msg = await context.bot.send_message(
-            escrow["group_id"],
-            f"Buyer can cancel the escrow before marking as paid 👇\n\nTicket: {escrow['ticket']}",
-            reply_markup=create_buttons([("Cancel ❌", "cancel_escrow")])
-        )
-        escrow["button_message_ids"].append(msg.message_id)
-    else:
-        # After buyer marks as paid: dispute button for both
-        msg = await context.bot.send_message(
-            escrow["group_id"],
-            f"Dispute button available for both parties 🛑\n\nTicket: {escrow['ticket']}",
-            reply_markup=create_buttons([("Dispute 🛑", "dispute_trade")])
-        )
-        escrow["button_message_ids"].append(msg.message_id)
-
-async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    await query.answer()
-
-    if "_" not in data:
-        return
-
+def get_crypto_price(symbol):
+    symbol_mapping = {"BTC": "bitcoin", "ETH": "ethereum", "LTC": "litecoin", "SOL": "solana"}
+    coingecko_symbol = symbol_mapping.get(symbol.upper())
+    if not coingecko_symbol:
+        return None
     try:
-        _, status_word, ticket = data.split("_")
-    except ValueError:
-        logging.warning("Invalid admin callback format")
-        return
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coingecko_symbol}&vs_currencies={FIAT_CURRENCY}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        price = data.get(coingecko_symbol, {}).get(FIAT_CURRENCY)
+        return price
+    except:
+        return None
 
-    payment_ok = status_word == "received"
-    escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
-    if not escrow:
-        logging.warning(f"No escrow found for ticket {ticket}")
-        return
+# ---------------- COMMANDS ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Welcome To K1 Escrow Bot!\nUse /escrow to start a trade.")
 
-    if payment_ok:
-        escrow["status"] = "payment_confirmed"
-        escrow["buyer_confirmed"] = payment_ok
-
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"✅ Status: Payment Confirmed\n🎟️ Ticket: {ticket}\nAction: Payment received and confirmed."
-        )
-
-        await context.bot.send_message(
-            escrow["group_id"],
-            f"✅ Status: Payment Confirmed\n🎟️ Ticket: {ticket}\n"
-            f"Amount: £{escrow['fiat_amount']} / {escrow['crypto_amount']} {escrow['crypto']}\n"
-            "Response: Seller can now send goods/services and confirm below when done 👇",
-            reply_markup=create_buttons([("I've sent the goods/services ✅", "seller_sent_goods")])
-        )
-    else:
-        escrow["status"] = "payment_not_received"
-        escrow["buyer_confirmed"] = False
-
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"❌ Status: Payment Not Received\n🎟️ Ticket: {ticket}\nAction: Payment was not received."
-        )
-
-        await context.bot.send_message(
-            escrow["group_id"],
-            f"❌ Status: Payment Not Received\n🎟️ Ticket: {ticket}\n"
-            "Response: Payment has not yet been received. Please wait while we confirm this transaction."
-        )
-
-# ---------------- COMMAND HANDLERS ----------------
 async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     if chat_id not in escrows:
         create_new_escrow(chat_id)
     escrow = escrows[chat_id]
-    await update.message.reply_text(
-        f"Both select your role to start escrow 👇\n\nTicket: {escrow['ticket']}",
-        reply_markup=create_buttons([("Join as Buyer 💷", "join_buyer"), ("Join as Seller 📦", "join_seller")])
-    )
+    buttons = []
+    if not escrow["buyer_id"]:
+        buttons.append([InlineKeyboardButton("Join as Buyer 💷", callback_data="join_buyer")])
+    if not escrow["seller_id"]:
+        buttons.append([InlineKeyboardButton("Join as Seller 📦", callback_data="join_seller")])
+    await update.message.reply_text("Both select your role to start escrow 👇", reply_markup=InlineKeyboardMarkup(buttons))
 
+# ---------------- CALLBACK HANDLER ----------------
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     chat_id = query.message.chat_id
     user_id = query.from_user.id
+    username = query.from_user.username or query.from_user.first_name
     data = query.data
 
     escrow = escrows.get(chat_id)
     if not escrow:
         escrow = create_new_escrow(chat_id)
 
-    # ---------------- Join Buyer ----------------
+    # Buyer joins
     if data == "join_buyer" and not escrow["buyer_id"]:
         escrow["buyer_id"] = user_id
-        await query.message.reply_text(
-            f"Status: Buyer Joined 💷\n🎟️ Ticket: {escrow['ticket']}\nAction: @{query.from_user.username} joined as Buyer\nResponse: Waiting for Seller 📦"
-        )
-        await query.message.edit_reply_markup(create_buttons([("Cancel ❌", "cancel_escrow")]))
-        await update_buttons_for_payment_status(context, escrow, buyer_paid=False)
-
-    # ---------------- Join Seller ----------------
-    if data == "join_seller" and not escrow["seller_id"]:
-        escrow["seller_id"] = user_id
-        await query.message.reply_text(
-            f"Status: Seller Joined 📦\n🎟️ Ticket: {escrow['ticket']}\nAction: @{query.from_user.username} joined as Seller\nResponse: Waiting for Buyer 💷"
-        )
-        await query.message.edit_reply_markup(create_buttons([("Cancel ❌", "cancel_escrow")]))
-        await update_buttons_for_payment_status(context, escrow, buyer_paid=False)
-
-    # ---------------- Buyer Marks as Paid ----------------
-    if data == "buyer_paid" and user_id == escrow["buyer_id"]:
-        escrow["status"] = "awaiting_admin_confirmation"
-        await query.message.reply_text(
-            f"⏳ Status: Awaiting Payment\n🎟️ Ticket: {escrow['ticket']}\nAmount: £{escrow['fiat_amount']} / {escrow['crypto_amount']} {escrow['crypto']}\nResponse: Please wait whilst we confirm this transaction on our network..."
-        )
-        await update_buttons_for_payment_status(context, escrow, buyer_paid=True)
-
-        # Notify admin
+        await query.message.reply_text(f"💷 @{username} joined as Buyer.")
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"⏳ Status: Awaiting Payment Confirmation\n🎟️ Ticket: {escrow['ticket']}\nBuyer: @{query.from_user.username}\nAmount: £{escrow['fiat_amount']} / {escrow['crypto_amount']} {escrow['crypto']}\nConfirm?",
-            reply_markup=create_buttons([("Yes ✅", f"payment_received_{escrow['ticket']}"), ("No ❌", f"payment_not_received_{escrow['ticket']}")])
+            f"🤝 Status: Buyer Joined\n💷 Buyer: @{username}\n🎟️ Ticket: {escrow['ticket']}"
         )
 
-    # ---------------- Seller Sent Goods ----------------
-    if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
-        escrow["goods_sent"] = True
-        escrow["status"] = "awaiting_buyer_confirmation"
-        await query.message.reply_text(
-            f"Status: Seller Has Sent Goods 📦\n🎟️ Ticket: {escrow['ticket']}\nAction: Seller has sent the goods/services."
+    # Seller joins
+    if data == "join_seller" and not escrow["seller_id"]:
+        escrow["seller_id"] = user_id
+        await query.message.reply_text(f"📦 @{username} joined as Seller.")
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"🤝 Status: Seller Joined\n📦 Seller: @{username}\n🎟️ Ticket: {escrow['ticket']}"
         )
-        await query.message.edit_reply_markup(create_buttons([("Confirm Goods Received ✅", "buyer_received_goods")]))
 
-    # ---------------- Buyer Confirms Goods Received ----------------
-    if data == "buyer_received_goods" and user_id == escrow["buyer_id"]:
-        escrow["goods_received"] = True
-        escrow["status"] = "escrow_complete"
-        await query.message.reply_text(
-            f"🎉 Status: Escrow Complete 🎉\n🎟️ Ticket: {escrow['ticket']}\nAction: Buyer has confirmed receipt of goods/services."
+    # Both joined -> choose crypto
+    if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
+        escrow["status"] = "crypto_selection"
+        msg = await context.bot.send_message(
+            chat_id,
+            f"✅ Status: Both Parties Joined\n🎟️ Ticket: {escrow['ticket']}\nAction: Buyer, select payment method 👇",
+            reply_markup=create_buttons([
+                ("BTC", "crypto_BTC"),
+                ("ETH", "crypto_ETH"),
+                ("LTC", "crypto_LTC"),
+                ("SOL", "crypto_SOL")
+            ])
         )
-        await query.message.edit_reply_markup(create_buttons([]))  # clear buttons
+        escrow["button_message_ids"].append(msg.message_id)
+
+    # Crypto selection
+    if data.startswith("crypto_") and user_id == escrow["buyer_id"]:
+        crypto = data.split("_")[1]
+        escrow["crypto"] = crypto
+        escrow["status"] = "awaiting_amount"
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"💷 Status: Payment Method Selected\n🎟️ Ticket: {escrow['ticket']}\nBuyer: @{username}\nAction: {crypto} selected"
+        )
+        await query.message.reply_text(f"💷 You selected {crypto} 🪙\nNow type /amount <GBP amount>")
+
+    # Buyer confirms payment
+    if data == "buyer_paid" and user_id == escrow["buyer_id"]:
+        escrow["status"] = "awaiting_admin_confirmation"
+        clear_buttons(context, escrow)
+
+        msg = await context.bot.send_message(
+            chat_id,
+            f"⏳ Status: Awaiting Payment\n🎟️ Ticket: {escrow['ticket']}\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n"
+            f"{escrow['crypto']} Amount: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            "Response: Please wait whilst we confirm this transaction on our network..."
+        )
+        escrow["button_message_ids"].append(msg.message_id)
+
+        # Persistent admin buttons
+        admin_msg = await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"⏳ Status: Awaiting Payment Confirmation\n🎟️ Ticket: {escrow['ticket']}\n"
+            f"Buyer: @{username}\nAmount: £{escrow['fiat_amount']}\n{escrow['crypto']} Amount: {escrow['crypto_amount']} {escrow['crypto']}\nConfirm?",
+            reply_markup=create_buttons([
+                ("Yes ✅", f"payment_received_{escrow['ticket']}"),
+                ("No ❌", f"payment_not_received_{escrow['ticket']}")
+            ])
+        )
+        escrow["button_message_ids"].append(admin_msg.message_id)
+
+    # Dispute
+    if data == "dispute_trade":
+        escrow["status"] = "disputed"
+        user_type = "Buyer" if user_id == escrow["buyer_id"] else "Seller"
+        await query.message.reply_text(
+            f"⚠️ Status: Dispute Raised\n🎟️ Ticket: {escrow['ticket']}\n"
+            f"Action: {user_type} @{username} has raised a dispute.\n"
+            "Please add admin @uptownk1 to the group. Funds are safe."
+        )
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"⚠️ Status: Dispute Raised\n🎟️ Ticket: {escrow['ticket']}\n{user_type}: @{username}"
+        )
+
+# ---------------- ADMIN PAYMENT CONFIRMATION ----------------
+async def handle_admin_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    parts = data.split("_")
+    if len(parts) < 3:
+        return
+    _, status_word, ticket = parts
+    payment_ok = status_word == "received"
+
+    escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
+    if not escrow:
+        return
+
+    buyer_user = await context.bot.get_chat_member(escrow["group_id"], escrow["buyer_id"])
+    seller_user = await context.bot.get_chat_member(escrow["group_id"], escrow["seller_id"])
+    buyer_name = f"@{buyer_user.user.username} (Buyer)" if buyer_user.user.username else f"{buyer_user.user.first_name} (Buyer)"
+    seller_name = f"@{seller_user.user.username} (Seller)" if seller_user.user.username else f"{seller_user.user.first_name} (Seller)"
+
+    if payment_ok:
+        escrow["status"] = "payment_confirmed"
+        msg = await context.bot.send_message(
+            escrow["group_id"],
+            f"✅ Status: Payment Confirmed\n🎟️ Ticket: {escrow['ticket']}\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n"
+            f"{escrow['crypto']} Amount: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            "Seller can now send goods/services. Both parties can raise dispute if needed.",
+            reply_markup=create_buttons([("Dispute 🛑", "dispute_trade")])
+        )
+        escrow["button_message_ids"].append(msg.message_id)
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"✅ Status: Payment Confirmed\n🎟️ Ticket: {escrow['ticket']}\nBuyer: {buyer_name}\nSeller: {seller_name}"
+        )
+    else:
+        escrow["status"] = "awaiting_payment"
+        msg = await context.bot.send_message(
+            escrow["group_id"],
+            f"⏳ Status: Awaiting Payment\n🎟️ Ticket: {escrow['ticket']}\n"
+            f"Response: Payment of £{escrow['fiat_amount']} has not yet been received. This chat will update shortly when payment is received.",
+            reply_markup=create_buttons([("Dispute 🛑", "dispute_trade")])
+        )
+        escrow["button_message_ids"].append(msg.message_id)
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"❌ Status: Payment Not Received\n🎟️ Ticket: {escrow['ticket']}\nBuyer: {buyer_name}\nSeller: {seller_name}"
+        )
+
+# ---------------- MESSAGE HANDLER ----------------
+async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
+    escrow = escrows.get(chat_id)
+    if not escrow:
+        await update.message.reply_text("No active escrow. Use /escrow.")
+        return
+    if escrow["buyer_id"] != user_id or escrow["status"] != "awaiting_amount":
+        await update.message.reply_text("You cannot set the amount now.")
+        return
+    try:
+        amount = float(text.split()[1])
+    except (ValueError, IndexError):
+        await update.message.reply_text("Invalid amount. Example: /amount 50")
+        return
+    crypto = escrow["crypto"]
+    price = get_crypto_price(crypto)
+    if price is None:
+        await update.message.reply_text("Unable to fetch crypto price. Try again later.")
+        return
+    crypto_amount = round(amount / price, 8)
+    escrow["fiat_amount"] = amount
+    escrow["crypto_amount"] = crypto_amount
+    escrow["status"] = "awaiting_payment"
+    wallet = ESCROW_WALLETS.get(crypto)
+
+    clear_buttons(context, escrow)
+    msg = await update.message.reply_text(
+        f"💷 Status: Buyer Deposit\n🎟️ Ticket: {escrow['ticket']}\n"
+        f"{crypto} Amount: {crypto_amount} {crypto} 🪙\n"
+        f"Deposit Wallet: `{wallet}`\n\nConfirm below once payment is made 👇",
+        parse_mode="MarkdownV2",
+        reply_markup=create_buttons([
+            ("I've Paid ✅", "buyer_paid")
+        ])
+    )
+    escrow["button_message_ids"].append(msg.message_id)
 
 # ---------------- MAIN ----------------
 def main():
-    application = ApplicationBuilder().token(TOKEN).build()
+    logging.basicConfig(level=logging.INFO)
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", escrow_command))
-    application.add_handler(CallbackQueryHandler(button_callback))
+    # Admin payment confirmation
+    app.add_handler(CallbackQueryHandler(
+        handle_admin_payment_confirmation,
+        pattern=r"^payment_(received|not_received)_[A-Z0-9]+$"
+    ))
 
-    application.run_polling()
+    # Other buttons
+    app.add_handler(CallbackQueryHandler(button_callback))
+
+    # Commands
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("escrow", escrow_command))
+
+    # Amount handler
+    app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
