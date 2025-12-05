@@ -348,7 +348,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet = ESCROW_WALLETS.get(crypto)
 
     await update.message.reply_text(
-        f"£{amount} \n {cryoto}: {crypto_amount} \n"
+        f"£{amount} \n {crypto}: {crypto_amount} \n"
         f"Send exact amount to:\n{wallet}\n\n"
         "Press 'I've Paid' once complete.",
         reply_markup=create_buttons([
