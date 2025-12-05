@@ -57,10 +57,10 @@ def create_new_escrow(chat_id):
 def create_escrow_buttons(escrow):
     buttons = []
     if not escrow["buyer_id"]:
-        buttons.append([InlineKeyboardButton("Join as Buyer", callback_data="join_buyer")])
+        buttons.append([InlineKeyboardButton("Join as Buyer 💷", callback_data="join_buyer")])
     if not escrow["seller_id"]:
-        buttons.append([InlineKeyboardButton("Join as Seller", callback_data="join_seller")])
-    buttons.append([InlineKeyboardButton("Cancel", callback_data="cancel_escrow")])
+        buttons.append([InlineKeyboardButton("Join as Seller 📦", callback_data="join_seller")])
+    buttons.append([InlineKeyboardButton("Cancel ❌", callback_data="cancel_escrow")])
     return InlineKeyboardMarkup(buttons)
 
 def create_buttons(items):
@@ -96,8 +96,9 @@ def get_crypto_price(symbol):
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Thank you for using K1 Escrow Bot!\n"
-        "Add this bot into a group with the Buyer and Seller, then type /escrow to start a trade."
+        "🤖Welcome To K1 Escrow Bot!🤖\n"
+        "1) Add this bot into group with buyer+seller ✍️\n"
+        "2) /escrow to start new trade 🫡"
     )
 
 async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,7 +107,7 @@ async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         create_new_escrow(chat_id)
     escrow = escrows[chat_id]
     await update.message.reply_text(
-        "Select your role to start escrow:",
+        "Select your role to start escrow 👇",
         reply_markup=create_escrow_buttons(escrow)
     )
 
@@ -205,22 +206,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "join_buyer" and not escrow["buyer_id"]:
         escrow["buyer_id"] = user_id
         await query.message.reply_text(
-            f"@{username} has joined as Buyer.\nWaiting for Seller.\nTicket: {escrow['ticket']}"
+            f"Status: New Trade\nAction: @{username} joined as Buyer\nResponse: Waiting for Seller.\nTicket Number: {escrow['ticket']}🎟️"
         )
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
         await context.bot.send_message(
-            ADMIN_GROUP_ID, f"Buyer @{username} joined escrow {escrow['ticket']}."
+            ADMIN_GROUP_ID, f"Status: New Trade\nAction:Buyer @{username} joined escrow Ticket Number: {escrow['ticket']} 🎟️"
         )
 
     # Join Seller
     if data == "join_seller" and not escrow["seller_id"]:
         escrow["seller_id"] = user_id
         await query.message.reply_text(
-            f"@{username} has joined as Seller.\nWaiting for Buyer.\nTicket: {escrow['ticket']}"
+            f"Status: New Trade\nAction: @{username} joined as Seller\nResponse: Waiting for Buyer.\nTicket Number: {escrow['ticket']}🎟️"
         )
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
         await context.bot.send_message(
-            ADMIN_GROUP_ID, f"Seller @{username} joined escrow {escrow['ticket']}."
+            ADMIN_GROUP_ID, f"Status: New Trade\nAction: Seller @{username} joined escrow\n Ticket Number: {escrow['ticket']}🎟️"
         )
 
     # Both joined
@@ -228,7 +229,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "crypto_selection"
         await context.bot.send_message(
             chat_id,
-            "Both parties joined. Buyer, select the crypto:",
+            "Status: Both parties joined ✅ \nBuyer, select payment method 👇",
             reply_markup=create_buttons([
                 ("BTC", "crypto_BTC"),
                 ("ETH", "crypto_ETH"),
@@ -244,7 +245,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         escrow["status"] = "awaiting_amount"
 
         await query.message.reply_text(
-            f"You selected {crypto}. Now send the amount in GBP using /amount <number>."
+            f"Status: Awaiting Payment\nYou selected {crypto}. \nNow type amount in GBP using /amount\n E.G /amount 100"
         )
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
 
