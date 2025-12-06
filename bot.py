@@ -298,18 +298,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ADMIN_GROUP_ID,
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {coin}\n"
-            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Action: Buyer confirmed receipt. Seller, please paste your wallet address."
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n📄 Action: Buyer confirmed receipt. Seller, please paste your wallet address."
         )
         await context.bot.send_message(
             chat_id,
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {coin}\n"
-            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Response: Buyer confirmed receipt. Seller, please paste your wallet address."
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n📄 Response: Buyer confirmed receipt. Seller, please use /wallet <your-wallet>."
         )
 
-# ---------------- MESSAGE HANDLER ----------------
+# ---------------- AMOUNT HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -347,55 +345,112 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-# ---------------- SELLER WALLET HANDLER ----------------
-async def handle_seller_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- SELLER WALLET ----------------
+async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     text = update.message.text.strip()
     escrow = escrows.get(chat_id)
     if not escrow:
+        await update.message.reply_text("No active escrow in this group.")
         return
     if escrow.get("status") != "awaiting_seller_wallet":
+        await update.message.reply_text("Cannot set wallet now.")
         return
     if user_id != escrow.get("seller_id"):
+        await update.message.reply_text("Only the seller can send the wallet address.")
         return
-    print(f"[DEBUG] Seller wallet message received: {text}")
-    escrow["wallet_address"] = text
+    try:
+        wallet_address = text.split(maxsplit=1)[1]
+    except IndexError:
+        await update.message.reply_text("Please provide the wallet address. Example:\n/wallet <your-wallet>")
+        return
+    escrow["wallet_address"] = wallet_address
     ticket = escrow["ticket"]
+    buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
+    seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
+    coin = escrow['crypto']
+    amount = escrow['fiat_amount']
+
+    # Notify admin
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n"
+        f"💷 Amount: £{amount}\n🪙 Crypto: {coin}\n"
+        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+        f"👛 Seller Wallet: `{wallet_address}`\n📄 Response: Please confirm funds release.",
+        parse_mode="Markdown",
+        reply_markup=create_buttons([("Mark as Sent ✅", f"admin_sent_{ticket}")])
+    )
+
+    # Notify escrow group
+    await update.message.reply_text(
+        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n"
+        f"💷 Amount: £{amount}\n🪙 Crypto: {coin}\n"
+        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+        "📄 Response: Please wait, your funds are now being released..."
+    )
+
+# ---------------- ADMIN RELEASE FUNDS ----------------
+async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if not data.startswith("admin_sent_"):
+        return
+    ticket = data.split("_", 2)[2]
+    escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
+    if not escrow:
+        await query.message.reply_text("Escrow not found.")
+        return
+    chat_id = escrow["group_id"]
     buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
     seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
     amount = escrow['fiat_amount']
     crypto = escrow['crypto']
-    # Admin notification
+    wallet = escrow.get('wallet_address', 'Not provided')
+    await clear_previous_buttons(context, escrow)
+    escrow["status"] = "completed"
+
+    # Notify admin
     await context.bot.send_message(
         ADMIN_GROUP_ID,
-        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Release ⏳\n"
+        f"🎟️ Ticket: {ticket}\n📌 Status: Trade Completed ✅\n"
         f"💷 Amount: £{amount}\n🪙 Crypto: {crypto}\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"👛 Seller Wallet: `{text}`\n📄 Action: Seller pasted wallet address",
-        parse_mode="Markdown",
-        reply_markup=create_buttons([("Mark as Sent ✅", f"admin_sent_{ticket}")])
-    )
-    # Escrow group notification
-    await update.message.reply_text(
-        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Release ⏳\n"
-        f"💷 Amount: £{amount}\n🪙 Crypto: {crypto}\n"
-        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"👛 Seller Wallet: `{text}`\n📄 Response: Please wait, your funds are now being released...",
+        f"👛 Seller Wallet: `{wallet}`\n📄 Response: Funds released successfully.",
         parse_mode="Markdown"
     )
-    escrow["status"] = "awaiting_admin_release"
+
+    # Notify escrow group
+    await context.bot.send_message(
+        chat_id,
+        f"🎟️ Ticket: {ticket}\n📌 Status: Trade Completed ✅\n"
+        f"💷 Amount: £{amount}\n🪙 Crypto: {crypto}\n"
+        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+        f"👛 Seller Wallet: `{wallet}`\n📄 Response: Trade completed successfully. Funds released to seller.",
+        parse_mode="Markdown"
+    )
+    escrows.pop(chat_id, None)
 
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # Callback Handlers
     app.add_handler(CallbackQueryHandler(handle_admin_payment_confirmation, pattern=r"^payment_(received|notreceived)_.*$"))
     app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CallbackQueryHandler(admin_sent_callback, pattern=r"^admin_sent_.*$"))
+
+    # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
+    app.add_handler(CommandHandler("wallet", wallet_command))
+
+    # Messages
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
-    app.add_handler(MessageHandler(filters.TEXT, handle_seller_wallet))  # catch any text from seller
+
     app.run_polling()
 
 if __name__ == "__main__":
