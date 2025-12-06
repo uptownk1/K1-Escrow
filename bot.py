@@ -124,14 +124,14 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     data = query.data
     await query.answer()
 
-    # Parse callback safely
+    # Correct parsing for both Yes and No
     parts = data.split("_")
     if len(parts) < 3:
         return
 
-    status_word = parts[1]  # 'received' or 'not'
+    action = parts[1]  # 'received' or 'notreceived'
     ticket = "_".join(parts[2:])
-    payment_ok = status_word == "received"
+    payment_ok = action == "received"
 
     # Find escrow by ticket
     escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
@@ -220,7 +220,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Cancel Escrow
     if data == "cancel_escrow":
         if escrow["status"] not in [None, "crypto_selection", "awaiting_amount"]:
-            # Prevent cancel after payment method selected
             await query.message.reply_text("⛔ Cannot cancel escrow at this stage.")
             return
 
@@ -319,7 +318,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 Seller: @{(await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username}",
             reply_markup=create_buttons([
                 ("Yes ✅", f"payment_received_{escrow['ticket']}"),
-                ("No ❌", f"payment_not_received_{escrow['ticket']}")
+                ("No ❌", f"payment_notreceived_{escrow['ticket']}")
             ])
         )
 
@@ -386,7 +385,7 @@ def main():
 
     app.add_handler(CallbackQueryHandler(
         handle_admin_payment_confirmation,
-        pattern=r"^payment_(received|not)_.*$"
+        pattern=r"^payment_(received|notreceived)_.*$"
     ))
 
     app.add_handler(CallbackQueryHandler(button_callback))
