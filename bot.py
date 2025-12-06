@@ -280,8 +280,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id,
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {escrow['crypto']}\n"
-            "📄 Response: Please wait whilst we confirm this transaction...",
-            reply_markup=create_buttons([("Dispute ⚠️", "dispute")])
+            "📄 Response: Please wait whilst we confirm this transaction..."
         )
         escrow["latest_message_id"] = msg.message_id
         await context.bot.send_message(
