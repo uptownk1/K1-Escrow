@@ -306,7 +306,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_text = (
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Seller marked goods as sent 📦\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{username}\n"
-            "📄 Action: Buyer confirm and press **Release Funds**\nNOTE: Only open dispute if you can not resolve it between you!"
+            "📄 Action: Buyer confirm and press **Release Funds**\nNOTE Only open dispute if:\n - You can not resolve it between you!\n- No response from buyer within 30 minutes.\n- You believe you are getting scammed. "
         )
         buttons = create_buttons([("Release Funds ✅", "buyer_release_funds"), ("Dispute ⚠️", "dispute")])
         msg = await context.bot.send_message(chat_id, msg_text, parse_mode="Markdown", reply_markup=buttons)
@@ -330,7 +330,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id,
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
-            "📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your {crypto} wallet address\n (E.G /wallet 0x1284k18493btc)",
+            f"📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your {crypto} wallet address\n (E.G /wallet 0x1284k18493btc)",
             parse_mode="Markdown"
         )
 
@@ -422,7 +422,7 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Notify escrow group (buyer/seller) with the same compact info (no wallet)
     await update.message.reply_text(
         f"🎟️ Ticket: {ticket}\n📌 Status: Processing Payment...⏳\n\n"
-        f"💷 Amount Sent: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
+        f"💷 Amount Sending: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
         f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
         "📄 Response: Funds are being sent to seller, you will receive an update in this chat when payment has been sent.",
@@ -475,10 +475,11 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         chat_id,
         f"🎉 Trade Completed!\n\n"
         f"🎟️ Ticket: {ticket}\n"
-        f"💷 Amount Released: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto - (amount_crypto * FEE_RATE))} {coin})\n"
-        f"💸 Fee Taken: {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n\n"
+        f"💷 Amount Released: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n"
+        f"🪙 Crypto Amount: ({fmt_crypto(amount_crypto - (amount_crypto * FEE_RATE))} {coin})\n"
+        f"💸 Escrow Fee Taken: {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n\n"
         "📄 Response: Funds have successfully been sent to seller.\n\n"
-        "🫡 Thank you for using K1 Escrow Bot, see you soon!",
+        "🫡 Thank you for using K1 Escrow Bot, see you soon! \n\nYou can now close this group.",
         parse_mode="Markdown"
     )
 
