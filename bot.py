@@ -227,14 +227,15 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticket = escrow["ticket"]
     buyer_id = escrow["buyer_id"]
     seller_id = escrow["seller_id"]
-    markup_buyer = create_escrow_buttons_dynamic(escrow, buyer_id)
-    markup_seller = create_escrow_buttons_dynamic(escrow, seller_id)
+    # Notify admin
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"🎟️ Ticket: {ticket}\nAdmin: Please release funds.",
-        reply_markup=create_buttons([("Mark as Sent ✅", f"admin_sent_{ticket}")])
+        reply_markup=create_escrow_buttons_dynamic(escrow, None)
     )
-    for uid, markup in [(buyer_id, markup_buyer), (seller_id, markup_seller)]:
+    # Notify buyer and seller
+    for uid in [buyer_id, seller_id]:
+        markup = create_escrow_buttons_dynamic(escrow, uid)
         await context.bot.send_message(
             chat_id,
             f"🎟️ Ticket: {ticket}\n📌 Status: Wallet Submitted ⏳\nWaiting for admin release.",
@@ -304,8 +305,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         escrow["buyer_confirmed"] = True
         escrow["status"] = "payment_marked"
-        await query.message.reply_text("✅ Payment marked. Seller and admin notified.")
-        await query.message.edit_reply_markup(create_escrow_buttons_dynamic(escrow, user_id))
+        await clear_previous_buttons(context, escrow)
+        # Notify buyer
+        markup_buyer = create_escrow_buttons_dynamic(escrow, escrow["buyer_id"])
+        await context.bot.send_message(
+            chat_id,
+            f"✅ Payment marked for Ticket: {ticket}\nWaiting for seller and admin.",
+            reply_markup=markup_buyer
+        )
+        # Notify seller
+        markup_seller = create_escrow_buttons_dynamic(escrow, escrow["seller_id"])
+        await context.bot.send_message(
+            chat_id,
+            f"💳 Buyer has marked payment for Ticket: {ticket}\nYou can now proceed.",
+            reply_markup=markup_seller
+        )
+        # Notify admin
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"💳 Payment marked by buyer for Ticket: {ticket}\nEscrow ready for next step."
+        )
         return
 
     # Dispute
@@ -352,7 +371,6 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     escrow["status"] = "completed"
     buyer_id = escrow["buyer_id"]
     seller_id = escrow["seller_id"]
-
     for uid in [buyer_id, seller_id]:
         markup = create_escrow_buttons_dynamic(escrow, uid)
         await context.bot.send_message(
@@ -373,7 +391,7 @@ def main():
     app.add_handler(CommandHandler("wallet", wallet_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(CallbackQueryHandler(admin_sent_callback, pattern=r'^admin_sent_'))
-    print("Bot running with fully user-specific buttons and role-based escrows...")
+    print("Bot running with fully user-specific buttons and fixed 'I've Paid' behavior...")
     app.run_polling()
 
 if __name__ == "__main__":
