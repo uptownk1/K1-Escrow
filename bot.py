@@ -491,7 +491,7 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"💸 Fee Taken: {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
         "📄 Response: Funds have been released to seller.\n\n"
-        "🫡 Thank you for using K1 Escrow Bot, see you soon! ,
+        "🫡 Thank you for using K1 Escrow Bot, see you soon!" ,
         parse_mode="Markdown"
     )
 
