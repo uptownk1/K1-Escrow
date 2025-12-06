@@ -178,10 +178,10 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             chat_id,
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Payment Confirmed ✅\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {escrow['crypto']}\n"
-            "📄 Action: Seller can now send goods/services 👇",
+            "📄 Action: Seller can now send goods/services to buyer"\n
+            "👇 Response: Confirm below when done",
             reply_markup=create_buttons([
-                ("I've sent the goods/services ✅", "seller_sent_goods"),
-                ("Dispute ⚠️", "dispute")
+                ("I've sent the goods/services ✅", "seller_sent_goods")
             ])
         )
         escrow["latest_message_id"] = msg.message_id
@@ -198,7 +198,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             chat_id,
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ❌\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n"
-            "📄 Response: Payment has not yet been received. You will be updated once received."
+            "📄 Response: Payment has not yet been received. You will receive a message once it has confirmed on our system."
         )
         escrow["latest_message_id"] = msg.message_id
 
@@ -269,7 +269,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Amount 💷\n"
             f"🪙 Crypto: {crypto}\n👤 Buyer: @{username}\n📄 Action: Buyer selected payment method"
         )
-        await query.message.reply_text(f"📄 Action: You selected {crypto} 🪙\n✍️ Now type the amount in GBP using: `/amount 100`", parse_mode="Markdown")
+        await query.message.reply_text(f"📄 Action: You selected {crypto} 🪙\n✍️ Response: Type the amount in GBP using: `/amount 100`", parse_mode="Markdown")
         await query.message.edit_reply_markup(create_escrow_buttons(escrow))
 
     # Buyer Paid
@@ -331,7 +331,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Response: Buyer confirmed goods were received.\nSeller type /wallet and then paste your wallet address\n E.G /wallet 0x1284k18493btc",
+            "📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your wallet address\n (E.G /wallet 0x1284k18493btc)",
             parse_mode="Markdown"
         )
 
@@ -366,7 +366,8 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ⏳\n"
         f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount)} ({FIAT_LABEL})\n🪙 {fmt_crypto(crypto_amount)} {crypto}\n\n"
-        f"📄 Send exact amount to wallet:\n\n`{wallet}`",
+        f"📄 Send exact amount to wallet:\n\n`{wallet}`\n\n"
+        "👇Mark as paid once done",
         parse_mode="Markdown",
         reply_markup=create_buttons([
             ("I've Paid ✅", "buyer_paid"),
