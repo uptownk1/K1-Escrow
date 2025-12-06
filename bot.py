@@ -133,17 +133,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2) /escrow to start a trade\n\n\n"
         "⬇ TERMS+CONDITIONS ⬇/n"
         "Buyer: 🤑\n"
-        "- Only send to the escrow wallet provided by the bot 🤖\n"
-        "- Ensure you send the correct amount 💷\n"
-        "- Only open a dispute if you think you are being scammed  or cant resolve between you 🆘\n"
-        "- If you do not mark goods as received or open a dispute within 30 minutes, funds are released to seller so always be online when in active trade ‼️\n"
-        "- Optional, but we advise you screen record or screenshot through your trade, incase need of evidence during a dispute 📲\n"
+        "- Only send to the escrow wallet provided by the bot\n"
+        "- Ensure you send the correct amount\n"
+        "- Only open a dispute if you think you are being scammed  or cant resolve between you\n"
+        "- If you do not mark goods as received or open a dispute within 30 minutes, funds are released to seller so always be online when in active trade\n"
+        "- Optional, but we advise you screen record or screenshot through your trade, incase need of evidence during a dispute\n"
 
         "Seller: 🤑\n"
-        "- Do NOT send any goods/services until transaction is fully confirmed on our network and is marked "Payment Received ‼️\n"
-        "- If there is any disagreement that can not be resolved, please open a dispute admin is here to help! 😊\n"
-        "- Optional, but we advise you screen record or screenshot through your trade, incase need of evidence during a dispute 📲\n\n\n"
-        "💰 This escrow service will deduct a 5% escrow fee from buyers deposit. This fee should be agreed between buyer/seller 💰"
+        "- Do NOT send any goods/services until transaction is fully confirmed on our network and is marked "Payment Received\n"
+        "- If there is any disagreement that can not be resolved, please open a dispute admin is here to help!\n"
+        "- Optional, but we advise you screen record or screenshot through your trade, incase need of evidence during a dispute\n\n\n"
+        "💰 This escrow service will deduct a 5% escrow fee from buyers deposit. This fee should be agreed between buyer/seller"
     )
 
 async def escrow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
