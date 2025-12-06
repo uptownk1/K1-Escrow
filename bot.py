@@ -419,7 +419,7 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Notify admin with release button using new compact format:
     await context.bot.send_message(
         ADMIN_GROUP_ID,
-        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n\n"
+        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Release ⏳\n\n"
         f"💷 Amount Sent: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
         f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
@@ -431,11 +431,11 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Notify escrow group (buyer/seller) with the same compact info (no wallet)
     await update.message.reply_text(
-        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n\n"
+        f"🎟️ Ticket: {ticket}\n📌 Status: Processing Transaction ⏳\n\n"
         f"💷 Amount Sent: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
         f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
-        "📄 Response: Please confirm funds release",
+        "📄 Response: Please wait whilst we process payment to seller wallet ⏳",
         parse_mode="Markdown"
     )
 
@@ -490,8 +490,8 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"💷 Amount Released: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto - (amount_crypto * FEE_RATE))} {coin})\n"
         f"💸 Fee Taken: {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"👛 Seller Wallet: `{wallet}`\n"
-        "📄 Response: Funds released to seller.",
+        "📄 Response: Funds have been released to seller.\n\n"
+        "🫡 Thank you for using K1 Escrow Bot, see you soon! ,
         parse_mode="Markdown"
     )
 
