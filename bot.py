@@ -137,6 +137,16 @@ def user_in_active_escrow(user_id):
                 return chat_id, e
     return None, None
 
+# statuses that indicate payment has been marked / in payment flow (treated as locked)
+PAID_STATUSES = {
+    "awaiting_payment",
+    "awaiting_admin_confirmation",
+    "payment_confirmed",
+    "awaiting_seller_wallet",
+    "awaiting_admin_release",
+    "awaiting_release"
+}
+
 # ---------------- COMMANDS ----------------
 def start(update: Update, context: CallbackContext):
     update.message.reply_text(
@@ -149,28 +159,45 @@ def escrow_command(update: Update, context: CallbackContext):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
 
-    # Check if user is already involved in an active escrow
+    # Check if user is already involved in an active escrow anywhere
     existing_chat_id, existing_escrow = user_in_active_escrow(user_id)
-    if existing_escrow:
-        seller_joined = existing_escrow.get("seller_id") is not None
-        status = existing_escrow.get("status")
-        # Define payment_marked statuses - if buyer marked as paid or we are awaiting admin release or wallet stage
-        payment_marked = status in ["awaiting_payment", "awaiting_admin_confirmation", "awaiting_seller_wallet", "awaiting_admin_release", "awaiting_release"]
 
-        if not seller_joined and not payment_marked:
+    if existing_escrow:
+        existing_status = existing_escrow.get("status")
+        existing_disputed = existing_escrow.get("disputed", False)
+        # When cancellation is allowed: ONLY if BOTH have NOT joined (i.e., at least one side missing)
+        both_joined = bool(existing_escrow.get("buyer_id")) and bool(existing_escrow.get("seller_id"))
+        payment_marked = existing_status in PAID_STATUSES
+
+        # If the user's existing escrow is in a locked state (paid or disputed) -> block starting a new trade
+        if payment_marked or existing_disputed:
+            # Block starting a new trade
+            update.message.reply_text(
+                "You already have a trade open and it is currently locked. "
+                "You cannot start a new trade until this one is completed."
+            )
+            return
+
+        # Otherwise (not paid/disputed) — per your rules:
+        # - If both joined but not paid -> cancellation is NOT allowed but starting a new trade IS allowed.
+        # - If only one role joined or nobody joined -> allow cancel and advise /cancel.
+        if both_joined:
+            # Both joined but not paid -> user may start a new trade (per your table).
+            # Inform user about existing trade (cannot cancel), but continue to show/create escrow in this chat.
+            update.message.reply_text(
+                "⚠️ You already have a trade open in another chat. "
+                "This existing trade cannot be cancelled, but you may start a new one here."
+            )
+            # Proceed to creating/showing escrow in current chat below
+        else:
+            # Seller hasn't joined (or buyer hasn't joined) and not paid -> allow cancel if desired.
             update.message.reply_text(
                 "⚠️ You already have a trade open.\n\n"
                 "Use /cancel to cancel the current trade and start a new one."
             )
-            return
-        else:
-            update.message.reply_text(
-                "🚫 You already have an active escrow trade and cannot start a new one.\n"
-                "This trade is already in progress and cannot be cancelled."
-            )
-            return
+            # Proceed to creating/showing escrow in current chat below
 
-    # No active trade involving the user in memory -> create or show escrow in this chat
+    # No blocking condition found -> create or show escrow in this chat
     if chat_id not in escrows:
         create_new_escrow(chat_id)
     escrow = escrows[chat_id]
@@ -186,13 +213,16 @@ def cancel_command(update: Update, context: CallbackContext):
         update.message.reply_text("❌ You don't have any active trades.")
         return
 
-    seller_joined = escrow.get("seller_id") is not None
+    # Determine join/payment state
+    buyer_joined = bool(escrow.get("buyer_id"))
+    seller_joined = bool(escrow.get("seller_id"))
+    both_joined = buyer_joined and seller_joined
     status = escrow.get("status")
-    # statuses indicating buyer has paid / payment flow started
-    payment_marked = status in ["awaiting_payment", "awaiting_admin_confirmation", "awaiting_seller_wallet", "awaiting_admin_release", "awaiting_release"]
+    payment_marked = status in PAID_STATUSES
+    disputed = escrow.get("disputed", False)
 
-    # Allow cancellation ONLY if seller has NOT joined and payment not marked
-    if (not seller_joined) and (not payment_marked):
+    # Allow cancellation ONLY if buyer and seller have NOT both joined AND payment not marked
+    if (not both_joined) and (not payment_marked) and (not disputed):
         # remove escrow
         escrows.pop(active_chat_id, None)
         context.bot.send_message(chat_id=update.message.chat_id, text="🛑 Trade cancelled successfully — no seller had joined yet.")
@@ -200,11 +230,9 @@ def cancel_command(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"❌ Escrow {escrow['ticket']} was cancelled by user.")
         return
 
-    # Otherwise deny cancel
+    # Otherwise deny cancel with your Option 3 message
     update.message.reply_text(
-        "🚫 You cannot cancel this trade.\n"
-        "It is already in escrow state (seller joined or payment in progress).\n\n"
-        "If there's an issue, contact an admin."
+        "Cancellation is locked. This trade must now be completed."
     )
 
 # ---------------- CALLBACK HANDLERS ----------------
@@ -499,9 +527,9 @@ def wallet_command(update: Update, context: CallbackContext):
     context.bot.send_message(
         ADMIN_GROUP_ID,
         f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n\n"
-        f"💷 Amount Sent: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
+        f"💷 Trade Amount: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
-        f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
+        f"🏦 Send To Seller: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
         f"👛 Seller Wallet: `{wallet_address}`\n\n📄 Response: Please confirm funds release",
         parse_mode="Markdown",
@@ -511,9 +539,9 @@ def wallet_command(update: Update, context: CallbackContext):
     # Notify escrow group (buyer/seller) with the same compact info (no wallet)
     update.message.reply_text(
         f"🎟️ Ticket: {ticket}\n📌 Status: Processing Payment...⏳\n\n"
-        f"💷 Amount Sending: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
+        f"💷 Trade Amount: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
-        f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
+        f"🏦 Amount Being Released: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
         "📄 Response: Funds are being sent to seller, you will receive an update in this chat when payment has been sent.",
         parse_mode="Markdown"
     )
