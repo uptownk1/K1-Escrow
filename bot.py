@@ -332,7 +332,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         escrow["latest_message_id"] = dispute_msg.message_id
 
-    # Seller Sent Goods
+    # Seller Sent Goods (updated)
     if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
         escrow["goods_sent"] = True
         escrow["status"] = "awaiting_buyer_action"
@@ -346,42 +346,54 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Notify escrow group
-        buyer_id = escrow["buyer_id"]
-        seller_id = escrow["seller_id"]
-
         msg_text = (
             "📦 Seller says goods are sent.\n"
             "Once happy, press 'Release Funds ✅' below.\n"
             "Any issues, press 'Dispute ⚠️'."
         )
 
-        # Buttons for buyer
-        buyer_buttons = create_buttons([
+        # Buttons: buyer release + dispute clickable by both
+        buttons = create_buttons([
             ("Release Funds ✅", "buyer_release_funds"),
-            ("Dispute ⚠️", "buyer_dispute")
+            ("Dispute ⚠️", "dispute")
         ])
 
-        # Buttons for seller (only dispute)
-        seller_buttons = create_buttons([
-            ("Dispute ⚠️", "seller_dispute")
-        ])
-
-        # Send buyer buttons
-        msg_buyer = await context.bot.send_message(
+        msg = await context.bot.send_message(
             chat_id,
             msg_text,
-            reply_markup=buyer_buttons
+            reply_markup=buttons
         )
 
-        # Send seller buttons
+        escrow["latest_message_id"] = msg.message_id
+
+    # Buyer confirms receipt / Release Funds
+    if data == "buyer_release_funds" and user_id == escrow["buyer_id"]:
+        escrow["status"] = "completed"
+
+        ticket = escrow["ticket"]
+        coin = escrow["crypto"]
+        buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
+        seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
+
+        # Notify admin
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"✅ Trade Completed Successfully\n🎟️ Ticket: {ticket}\n"
+            f"Status: Completed\n"
+            f"👤 Buyer: @{buyer_username}\n"
+            f"👤 Seller: @{seller_username}\n"
+            f"Action: Buyer confirmed receipt of goods/services.\n"
+            f"Seller, paste wallet address for {coin} network. Payment will now be released to buyer."
+        )
+
+        # Notify escrow group
         await context.bot.send_message(
             chat_id,
-            "Seller options:",
-            reply_markup=seller_buttons
+            f"✅ Trade Completed Successfully\n🎟️ Ticket: {ticket}\n"
+            f"Status: Completed\n"
+            "Buyer has confirmed receipt of goods/services.\n"
+            f"Seller, paste wallet address for {coin} network. Payment will now be released to buyer."
         )
-
-        # Save latest message id for cleanup
-        escrow["latest_message_id"] = msg_buyer.message_id
 
 # ---------------- MESSAGE HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
