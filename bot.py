@@ -143,21 +143,15 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
         escrow["buyer_confirmed"] = True
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"🎟️ Ticket: {escrow['ticket']}\n"
-            f"📌 Status: Payment Confirmed ✅\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n"
-            f"🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
-            f"👤 Buyer: @{buyer_username}\n"
-            f"👤 Seller: @{seller_username}\n"
-            "📄 Action: Payment confirmed by admin",
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Payment Confirmed ✅\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n📄 Action: Payment confirmed by admin",
             parse_mode="Markdown"
         )
         msg = await context.bot.send_message(
             chat_id,
-            f"🎟️ Ticket: {escrow['ticket']}\n"
-            f"📌 Status: Payment Confirmed ✅\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n"
-            f"🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Payment Confirmed ✅\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
             "📄 Action: Seller can now send goods/services 👇",
             reply_markup=create_buttons([
                 ("I've sent the goods/services ✅", "seller_sent_goods")
@@ -168,21 +162,15 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
         escrow["status"] = "awaiting_payment"
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"🎟️ Ticket: {escrow['ticket']}\n"
-            f"📌 Status: Awaiting Payment ❌\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n"
-            f"🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
-            f"👤 Buyer: @{buyer_username}\n"
-            f"👤 Seller: @{seller_username}\n"
-            "📄 Action: Payment not received",
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ❌\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n📄 Action: Payment not received",
             parse_mode="Markdown"
         )
         msg = await context.bot.send_message(
             chat_id,
-            f"🎟️ Ticket: {escrow['ticket']}\n"
-            f"📌 Status: Awaiting Payment ❌\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n"
-            f"🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ❌\n"
+            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto_amount']} {escrow['crypto']}\n"
             "📄 Response: Payment has not yet been received. You will be updated once received."
         )
         escrow["latest_message_id"] = msg.message_id
@@ -321,32 +309,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📄 Response: Buyer confirmed receipt. Seller, please paste your wallet address."
         )
 
-    # Admin marks funds as sent
-    if data.startswith("admin_sent_") and user_id == ADMIN_GROUP_ID:
-        ticket = data.split("_")[-1]
-        escrow = next((e for e in escrows.values() if e["ticket"] == ticket), None)
-        if not escrow:
-            return
-        chat_id = escrow["group_id"]
-        buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
-        seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"🎟️ Ticket: {ticket}\n📌 Status: Funds Released ✅\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto']}\n"
-            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            f"👛 Seller Wallet: `{escrow['wallet_address']}`\n📄 Action: Admin released funds",
-            parse_mode="Markdown"
-        )
-        await context.bot.send_message(
-            chat_id,
-            f"🎟️ Ticket: {ticket}\n📌 Status: Funds Released ✅\n"
-            f"💷 Amount: £{escrow['fiat_amount']}\n🪙 Crypto: {escrow['crypto']}\n"
-            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Response: Funds successfully released. Trade completed 🎉"
-        )
-        escrows.pop(chat_id, None)
-
 # ---------------- MESSAGE HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -397,7 +359,7 @@ async def handle_seller_wallet(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     if user_id != escrow.get("seller_id"):
         return
-    print(f"Seller wallet handler triggered. Text: {text}")  # debug log
+    print(f"[DEBUG] Seller wallet message received: {text}")
     escrow["wallet_address"] = text
     ticket = escrow["ticket"]
     buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
@@ -433,7 +395,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("escrow", escrow_command))
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_seller_wallet))
+    app.add_handler(MessageHandler(filters.TEXT, handle_seller_wallet))  # catch any text from seller
     app.run_polling()
 
 if __name__ == "__main__":
