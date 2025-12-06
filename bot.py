@@ -324,14 +324,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Action: Buyer confirmed receipt. Seller must now provide wallet."
+            "📄 Action: Buyer confirmed goods received. Waiting for sellers wallet."
         )
         await context.bot.send_message(
             chat_id,
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-            "📄 Response: Buyer confirmed receipt.\nPlease use `/wallet addresshere`.",
+            "📄 Response: Buyer confirmed goods were received.\nSeller type /wallet and then paste your wallet address\n E.G /wallet 0x1284k18493btc",
             parse_mode="Markdown"
         )
 
@@ -365,8 +365,8 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await clear_previous_buttons(context, escrow)
     await update.message.reply_text(
         f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Awaiting Payment ⏳\n"
-        f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount)} ({FIAT_LABEL})\n🪙 {fmt_crypto(crypto_amount)} {crypto}\n"
-        f"📄 Send exact amount to wallet:\n`{wallet}`",
+        f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount)} ({FIAT_LABEL})\n🪙 {fmt_crypto(crypto_amount)} {crypto}\n\n"
+        f"📄 Send exact amount to wallet:\n\n`{wallet}`",
         parse_mode="Markdown",
         reply_markup=create_buttons([
             ("I've Paid ✅", "buyer_paid"),
