@@ -178,7 +178,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             chat_id,
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Payment Confirmed ✅\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {escrow['crypto']}\n"
-            "📄 Action: Seller can now send goods/services to buyer"\n
+            "📄 Action: Seller can now send goods/services to buyer\n"
             "👇 Response: Confirm below when done",
             reply_markup=create_buttons([
                 ("I've sent the goods/services ✅", "seller_sent_goods")
