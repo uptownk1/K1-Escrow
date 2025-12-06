@@ -304,9 +304,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 Seller: @{username}\n👤 Buyer: @{buyer_username}\n📄 Action: Seller marked goods as sent"
         )
         msg_text = (
-            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Goods Sent 📦\n"
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Seller marked goods as sent 📦\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{username}\n"
-            "📄 Action: Once happy, press **Release Funds**, otherwise open a dispute."
+            "📄 Action: Buyer confirm and press **Release Funds**\nNOTE: Only open dispute if you can not resolve it between you!"
         )
         buttons = create_buttons([("Release Funds ✅", "buyer_release_funds"), ("Dispute ⚠️", "dispute")])
         msg = await context.bot.send_message(chat_id, msg_text, parse_mode="Markdown", reply_markup=buttons)
@@ -332,8 +332,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
             f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
             "📄 Response: Buyer confirmed receipt.\nPlease use `/wallet addresshere`.",
-            parse_mode="Markdown",
-            reply_markup=create_buttons([("Dispute ⚠️", "dispute")])
+            parse_mode="Markdown"
         )
 
 # ---------------- AMOUNT HANDLER ----------------
@@ -422,11 +421,11 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Notify escrow group (buyer/seller) with the same compact info (no wallet)
     await update.message.reply_text(
-        f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n\n"
+        f"🎟️ Ticket: {ticket}\n📌 Status: Processing Payment...⏳\n\n"
         f"💷 Amount Sent: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
         f"💸 Escrow Fee (5%): {FIAT_SYMBOL}{fmt_auto(fee_fiat)} ({FIAT_LABEL})\n"
         f"🏦 Amount After Fee: {FIAT_SYMBOL}{fmt_auto(payout_fiat)} ({FIAT_LABEL})\n\n"
-        "📄 Response: Please confirm funds release",
+        "📄 Response: Funds are being sent to seller, you will receive an update in this chat when payment has been sent.",
         parse_mode="Markdown"
     )
 
