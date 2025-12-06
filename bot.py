@@ -247,6 +247,61 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     escrows.pop(ticket)
     group_escrows[escrow["group_id"]].remove(ticket)
 
+# ---------------- DISPUTE HANDLER ----------------
+async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+    user_id = query.from_user.id
+    username = query.from_user.username or query.from_user.first_name
+    data = query.data
+
+    # parse ticket
+    parts = data.rsplit("_", 1)
+    action = parts[0]
+    ticket = parts[1] if len(parts) > 1 else None
+    escrow = escrows.get(ticket)
+
+    if not escrow:
+        await query.message.reply_text("Escrow not found.")
+        return
+
+    # Only participants can open a dispute
+    if user_id not in [escrow.get("buyer_id"), escrow.get("seller_id")]:
+        await query.message.reply_text("Only participants can open a dispute.")
+        return
+
+    if escrow.get("disputed"):
+        await query.message.reply_text("Dispute already open for this escrow. Please wait for admin.")
+        return
+
+    escrow["disputed"] = True
+    escrow["status"] = "disputed"
+    await clear_previous_buttons(context, escrow)
+
+    buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
+    seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
+    amount = escrow.get("fiat_amount", "N/A")
+    crypto_amount = escrow.get("crypto_amount", 0)
+    coin = escrow.get("crypto", "N/A")
+
+    await context.bot.send_message(
+        chat_id,
+        f"⚠️ Escrow Disputed 🎟️ Ticket: {ticket}\n"
+        f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int,float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
+        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+        f"📄 Action: @{username} opened a dispute. Escrow paused. Please wait for admin.",
+        parse_mode="Markdown"
+    )
+
+    await context.bot.send_message(
+        ADMIN_GROUP_ID,
+        f"⚠️ Escrow Disputed 🎟️ Ticket: {ticket}\n"
+        f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int,float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
+        f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+        f"📄 Action: Dispute opened by @{username}. Please review and release funds manually."
+    )
+
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -256,6 +311,7 @@ def main():
     app.add_handler(CommandHandler("wallet", wallet_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern=r".*"))
     app.add_handler(CallbackQueryHandler(admin_sent_callback, pattern=r"^admin_sent_.*$"))
+    app.add_handler(CallbackQueryHandler(dispute_callback, pattern=r"^dispute_.*$"))
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \S+ \d+(\.\d+)?$'), handle_amount))
     app.run_polling()
 
