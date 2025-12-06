@@ -250,21 +250,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Both Joined → Crypto Selection
     if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
         escrow["status"] = "crypto_selection"
-        # UPDATED: Added Cancel button below crypto buttons
-        buttons = [
-            [InlineKeyboardButton("BTC", "crypto_BTC")],
-            [InlineKeyboardButton("ETH", "crypto_ETH")],
-            [InlineKeyboardButton("LTC", "crypto_LTC")],
-            [InlineKeyboardButton("SOL", "crypto_SOL")],
-            [InlineKeyboardButton("Cancel ❌", "cancel_escrow")]
-        ]
         msg = await context.bot.send_message(
             chat_id,
             f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Both Parties Joined ✅\n"
             f"👤 Buyer: @{(await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username}\n"
             f"👤 Seller: @{(await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username}\n"
             "📄 Action: Buyer select payment method 👇",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=create_buttons([
+                ("BTC", "crypto_BTC"),
+                ("ETH", "crypto_ETH"),
+                ("LTC", "crypto_LTC"),
+                ("SOL", "crypto_SOL")
+            ])
         )
         escrow["latest_message_id"] = msg.message_id
 
