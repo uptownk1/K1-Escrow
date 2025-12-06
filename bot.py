@@ -293,6 +293,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=create_buttons([("Yes ✅", f"payment_received_{escrow['ticket']}"), ("No ❌", f"payment_notreceived_{escrow['ticket']}")])
         )
 
+    # Seller Sent Goods
+    if data == "seller_sent_goods" and user_id == escrow["seller_id"]:
+        escrow["goods_sent"] = True
+        escrow["status"] = "awaiting_buyer_action"
+        buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Goods Sent 📦\n"
+            f"👤 Seller: @{username}\n👤 Buyer: @{buyer_username}\n📄 Action: Seller marked goods as sent"
+        )
+        msg_text = (
+            f"🎟️ Ticket: {escrow['ticket']}\n📌 Status: Seller marked goods as sent 📦\n"
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{username}\n"
+            "📄 Action: Buyer confirm and press **Release Funds**\nNOTE Only open dispute if:\n - You can not resolve it between you!\n- No response from buyer within 30 minutes.\n- You believe you are getting scammed. "
+        )
+        buttons = create_buttons([("Release Funds ✅", "buyer_release_funds"), ("Dispute ⚠️", "dispute")])
+        msg = await context.bot.send_message(chat_id, msg_text, parse_mode="Markdown", reply_markup=buttons)
+        escrow["latest_message_id"] = msg.message_id
+
+    # Buyer confirms receipt / Release Funds
+    if data == "buyer_release_funds" and user_id == escrow["buyer_id"]:
+        escrow["status"] = "awaiting_seller_wallet"
+        ticket = escrow["ticket"]
+        coin = escrow["crypto"]
+        buyer_username = (await context.bot.get_chat_member(chat_id, escrow['buyer_id'])).user.username
+        seller_username = (await context.bot.get_chat_member(chat_id, escrow['seller_id'])).user.username
+        await context.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
+            f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
+            f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
+            "📄 Action: Buyer confirmed goods received. Waiting for sellers wallet."
+        )
+        await context.bot.send_message(
+            chat_id,
+            f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
+            f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
+            f"📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your {crypto} wallet address\n (E.G /wallet 0x1284k18493btc)",
+            parse_mode="Markdown"
+        )
+
 # ---------------- AMOUNT HANDLER ----------------
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -365,7 +406,7 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fee_fiat = amount_fiat * FEE_RATE
     payout_fiat = amount_fiat - fee_fiat
 
-    # Notify admin with release button
+    # Notify admin with release button using new compact format:
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Admin Release ⏳\n\n"
@@ -378,7 +419,7 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=create_buttons([("Mark as Sent ✅", f"admin_sent_{ticket}")])
     )
 
-    # Notify escrow group
+    # Notify escrow group (buyer/seller) with the same compact info (no wallet)
     await update.message.reply_text(
         f"🎟️ Ticket: {ticket}\n📌 Status: Processing Payment...⏳\n\n"
         f"💷 Amount Sending: {FIAT_SYMBOL}{fmt_auto(amount_fiat)} ({FIAT_LABEL}) ({fmt_crypto(amount_crypto)} {coin})\n"
@@ -429,7 +470,7 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="Markdown"
     )
 
-    # Notify escrow group final
+    # Notify escrow group final (seller/buyer)
     await context.bot.send_message(
         chat_id,
         f"🎉 Trade Completed!\n\n"
@@ -499,42 +540,6 @@ async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ---------------- LIVE TRANSCRIPT HANDLER ----------------
-async def live_transcript(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    escrow = escrows.get(chat_id)
-    if not escrow:
-        return  # No active escrow, ignore
-
-    user_id = update.message.from_user.id
-    # Only log messages from buyer or seller
-    if user_id not in [escrow.get("buyer_id"), escrow.get("seller_id")]:
-        return
-
-    username = update.message.from_user.username or update.message.from_user.first_name
-    text = update.message.text or ""
-    caption = update.message.caption or ""
-    msg_type = "text"
-
-    # Detect media types
-    if update.message.photo:
-        msg_type = "photo"
-    elif update.message.video:
-        msg_type = "video"
-    elif update.message.audio:
-        msg_type = "audio"
-    elif update.message.voice:
-        msg_type = "voice"
-    elif update.message.document:
-        msg_type = "document"
-
-    content = text if text else caption if caption else f"<{msg_type} file>"
-
-    await context.bot.send_message(
-        ADMIN_GROUP_ID,
-        f"📄 Escrow {escrow['ticket']} - {msg_type} from @{username}:\n{content}"
-    )
-
 # ---------------- MAIN ----------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -551,9 +556,6 @@ def main():
     app.add_handler(CommandHandler("wallet", wallet_command))
 
     app.add_handler(MessageHandler(filters.Regex(r'^/amount \d+(\.\d+)?$'), handle_amount))
-
-    # Add live transcript handler (all messages)
-    app.add_handler(MessageHandler(filters.ALL, live_transcript))
 
     app.run_polling()
 
