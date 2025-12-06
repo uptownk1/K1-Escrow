@@ -242,7 +242,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     crypto = escrow["crypto"]
     price = get_crypto_price(crypto)
     if price is None:
-        await update.message.reply_text("Unable to fetch the price. Try later.")
+        await update.message.reply_text("Unable to fetch the price. Error: Too many attempts. Wait 1-2 minutes and try /amount again.")
         return
     crypto_amount = round(amount / price, 8)
     escrow["fiat_amount"] = amount
