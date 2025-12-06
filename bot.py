@@ -261,7 +261,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ("ETH", "crypto_ETH"),
                 ("LTC", "crypto_LTC"),
                 ("SOL", "crypto_SOL"),
-                 ("Cancel", "cancel_escrow")
+                 ("Cancel ❌", "cancel_escrow")
             ])
         )
         escrow["latest_message_id"] = msg.message_id
