@@ -526,7 +526,7 @@ async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎟️ Ticket: {ticket}\n📌 Status: Trade Disputed ⚠️\n"
         f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int, float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"📄 Action: Trade disputed by @{username}. Escrow is now paused. Please wait for admin to review.",
+        f"📄 Action: Trade disputed by @{username}. Escrow is now paused. Add admin @uptownk1 into this group to resolve the trade. Your funds are safe.",
         parse_mode="Markdown"
     )
     try:
@@ -538,7 +538,7 @@ async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎟️ Ticket: {ticket}\n📌 Status: Trade Disputed ⚠️\n"
         f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int, float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"📄 Action: Dispute opened by @{username}. Escrow is paused. Join the group to review:\n{invite_link}",
+        f"📄 Action: Waiting for user to add you to group for review.",
         parse_mode="Markdown"
     )
 
