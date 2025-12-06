@@ -92,10 +92,6 @@ def get_crypto_price(symbol):
         return None
 
 def fmt_auto(number):
-    """Option C formatting:
-    - no decimals if whole number
-    - otherwise two decimals
-    """
     try:
         n = float(number)
     except Exception:
@@ -106,7 +102,6 @@ def fmt_auto(number):
         return f"{n:.2f}"
 
 def fmt_crypto(number):
-    """Format crypto amount with up to 8 decimals trimmed; apply Option C padding when needed."""
     try:
         n = float(number)
     except Exception:
@@ -444,7 +439,6 @@ async def admin_sent_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     data = query.data
 
-    # Ensure callback originates from admin group message
     if query.message.chat.id != ADMIN_GROUP_ID:
         return
 
@@ -504,15 +498,23 @@ async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     username = query.from_user.username or query.from_user.first_name
     escrow = escrows.get(chat_id)
+
     if not escrow:
         await query.message.reply_text("No active escrow in this group.")
         return
+
+    # Remove all previous buttons immediately to pause escrow
+    await clear_previous_buttons(context, escrow)
+
+    # Only participants can open a dispute
     if user_id not in [escrow.get("buyer_id"), escrow.get("seller_id")]:
         await query.message.reply_text("Only participants can open a dispute.")
         return
+
     if escrow.get("disputed"):
         await query.message.reply_text("Dispute already open. Please wait for admin.")
         return
+
     escrow["disputed"] = True
     escrow["status"] = "disputed"
     ticket = escrow["ticket"]
@@ -521,24 +523,25 @@ async def dispute_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount = escrow.get("fiat_amount", "N/A")
     crypto_amount = escrow.get("crypto_amount", 0)
     coin = escrow.get("crypto", "N/A")
+
+    # Notify group that a dispute has been raised
     await context.bot.send_message(
         chat_id,
         f"🎟️ Ticket: {ticket}\n📌 Status: Trade Disputed ⚠️\n"
         f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int, float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"📄 Action: Trade disputed by @{username}. Escrow is now paused. Add admin @uptownk1 into this group to resolve the trade. Your funds are safe.",
+        f"📄 Action: Trade disputed by @{username}. Escrow is now paused. Please wait for admin to review.",
         parse_mode="Markdown"
     )
-    try:
-        invite_link = await context.bot.create_chat_invite_link(chat_id)
-    except:
-        invite_link = "Unable to generate invite link."
+
+    # Notify admin with instructions for manual review
     await context.bot.send_message(
         ADMIN_GROUP_ID,
         f"🎟️ Ticket: {ticket}\n📌 Status: Trade Disputed ⚠️\n"
         f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(amount) if isinstance(amount, (int, float)) else amount} ({FIAT_LABEL}) ({fmt_crypto(crypto_amount)} {coin})\n"
         f"👤 Buyer: @{buyer_username}\n👤 Seller: @{seller_username}\n"
-        f"📄 Action: Waiting for user to add you to group for review.",
+        f"📄 Action: Dispute opened by @{username}. "
+        "Bot cannot generate an invite link. Please ask a participant to provide a manual invite link or add you to the group to review.",
         parse_mode="Markdown"
     )
 
