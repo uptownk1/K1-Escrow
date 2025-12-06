@@ -124,14 +124,13 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     data = query.data
     await query.answer()
 
-    if "_" not in data:
+    # Parse callback safely
+    parts = data.split("_")
+    if len(parts) < 3:
         return
 
-    try:
-        _, status_word, ticket = data.split("_")
-    except ValueError:
-        return
-
+    status_word = parts[1]  # 'received' or 'not'
+    ticket = "_".join(parts[2:])
     payment_ok = status_word == "received"
 
     # Find escrow by ticket
@@ -139,15 +138,15 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
     if not escrow:
         return
 
-    # Clear dispute buttons on previous message
-    await clear_previous_buttons(context, escrow)
-
     chat_id = escrow["group_id"]
     buyer_id = escrow["buyer_id"]
     seller_id = escrow["seller_id"]
 
     buyer_username = (await context.bot.get_chat_member(chat_id, buyer_id)).user.username
     seller_username = (await context.bot.get_chat_member(chat_id, seller_id)).user.username
+
+    # Clear all previous buttons in escrow chat
+    await clear_previous_buttons(context, escrow)
 
     if payment_ok:
         escrow["status"] = "payment_confirmed"
@@ -165,7 +164,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             parse_mode="Markdown"
         )
 
-        # Notify trade group
+        # Notify escrow group
         msg = await context.bot.send_message(
             chat_id,
             f"✅ Status: Payment Confirmed\n"
@@ -194,7 +193,7 @@ async def handle_admin_payment_confirmation(update: Update, context: ContextType
             parse_mode="Markdown"
         )
 
-        # Notify trade group
+        # Notify escrow group
         msg = await context.bot.send_message(
             chat_id,
             f"⏳ Status: Awaiting Payment\n"
@@ -214,15 +213,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = query.from_user.username or query.from_user.first_name
     data = query.data
 
-    if chat_id is None:
-        return  # Safety
-
     escrow = escrows.get(chat_id)
     if not escrow:
         escrow = create_new_escrow(chat_id)
 
     # Cancel Escrow
     if data == "cancel_escrow":
+        if escrow["status"] not in [None, "crypto_selection", "awaiting_amount"]:
+            # Prevent cancel after payment method selected
+            await query.message.reply_text("⛔ Cannot cancel escrow at this stage.")
+            return
+
         escrows.pop(chat_id, None)
         await query.message.reply_text("Escrow cancelled. Use /escrow to start again.")
         await context.bot.send_message(
@@ -256,7 +257,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🤝 Status: Seller Joined\n🎟️ Ticket: {escrow['ticket']}\n👤 Seller: @{username}"
         )
 
-    # Both Joined
+    # Both Joined → Crypto Selection
     if escrow["buyer_id"] and escrow["seller_id"] and escrow["status"] is None:
         escrow["status"] = "crypto_selection"
         msg = await context.bot.send_message(
@@ -294,7 +295,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "buyer_paid" and user_id == escrow["buyer_id"]:
         escrow["status"] = "awaiting_admin_confirmation"
 
-        # Clear buttons from previous message
+        # Clear all previous buttons
         await clear_previous_buttons(context, escrow)
 
         # Notify escrow group
@@ -322,11 +323,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-        # Send dispute button to escrow group
+        # Send dispute button for both buyer and seller
         dispute_msg = await context.bot.send_message(
             chat_id,
             "⚠️ If there is an issue with payment, you can open a dispute 👇",
-            reply_markup=create_buttons([("Dispute ⚠️", "dispute")])
+            reply_markup=create_buttons([
+                ("Dispute ⚠️", "dispute")
+            ])
         )
         escrow["latest_message_id"] = dispute_msg.message_id
 
@@ -383,7 +386,7 @@ def main():
 
     app.add_handler(CallbackQueryHandler(
         handle_admin_payment_confirmation,
-        pattern=r"^payment_(received|not_received)_[A-Z0-9]+$"
+        pattern=r"^payment_(received|not)_.*$"
     ))
 
     app.add_handler(CallbackQueryHandler(button_callback))
