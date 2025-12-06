@@ -215,7 +215,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Cancel Escrow
     if data.startswith("cancel_escrow_") and escrow:
-        if escrow["status"] not in [None, "crypto_selection", "awaiting_amount"]:
+        if escrow["status"] not in [None, "awaiting_amount"]:
             await query.message.reply_text("⛔ Cannot cancel escrow at this stage.")
             return
         escrows.pop(escrow['ticket'], None)
