@@ -330,7 +330,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id,
             f"🎟️ Ticket: {ticket}\n📌 Status: Awaiting Seller Wallet ⏳\n"
             f"💷 Amount: {FIAT_SYMBOL}{fmt_auto(escrow['fiat_amount'])} ({FIAT_LABEL})\n🪙 Crypto: {fmt_crypto(escrow['crypto_amount'])} {coin}\n"
-            f"📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your {crypto} wallet address\n (E.G /wallet 0x1284k18493btc)",
+            f"📄 Action: Buyer confirmed goods were received.\n💬 Response: Seller type /wallet and then paste your {coin} wallet address\n (E.G /wallet 0x1284k18493btc)",
             parse_mode="Markdown"
         )
 
